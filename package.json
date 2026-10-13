@@ -1,0 +1,8 @@
+{
+  "name": "baseline",
+  "private": true,
+  "type": "module",
+  "scripts": { "import-export": "node scripts/import-export.mjs ./export" },
+  "dependencies": { "@supabase/supabase-js": "2.45.4" },
+  "engines": { "node": ">=20" }
+}

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Baseline Performance</title>
+<meta name="description" content="Recovery, strain and sleep from Apple Watch and Strava, matched to your training plan.">
+<meta name="theme-color" content="#0d1219">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Baseline">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/styles.css">
+<style>
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; } img { max-width: 100%; } [hidden] { display: none !important; }
+#login { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: var(--bg); padding: 16px; }
+.login-card { width: min(100%, 380px); display: grid; gap: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 24px; }
+.login-card form { display: grid; gap: 10px; }
+.login-card input { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; color: var(--fg); font: inherit; }
+.login-card .brand b { font: 700 24px/1 var(--font-display); letter-spacing: .14em; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand">
+      <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><g fill="none" stroke-width="3.4" stroke-linecap="round" transform="rotate(-90 15 15)"><circle cx="15" cy="15" r="11.5" stroke="var(--rec-hi)" stroke-dasharray="19 53.26"/><circle cx="15" cy="15" r="11.5" stroke="var(--strain)" stroke-dasharray="19 53.26" stroke-dashoffset="-24.09"/><circle cx="15" cy="15" r="11.5" stroke="var(--sleep)" stroke-dasharray="19 53.26" stroke-dashoffset="-48.17"/></g></svg>
+      <div><b>BASELINE</b><small>Watch + Strava</small></div>
+    </div>
+    <nav class="nav" id="nav" aria-label="Sections"></nav>
+    <div class="rail-foot" id="railFoot"></div>
+  </aside>
+  <main class="main">
+    <div class="wrap">
+      <header class="topbar" id="topbar"></header>
+      <div id="banner"></div>
+      <section class="view" id="view" aria-live="polite"></section>
+    </div>
+  </main>
+</div>
+<div id="tip" class="tip" role="tooltip" hidden></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="/js/platform.js"></script>
+<script src="/js/util.js"></script>
+<script src="/js/zipread.js"></script>
+<script src="/js/apple.js"></script>
+<script src="/js/shortcut.js"></script>
+<script src="/js/strava.js"></script>
+<script src="/js/model.js"></script>
+<script src="/js/insights.js"></script>
+<script src="/js/planimport.js"></script>
+<script src="/js/sample.js"></script>
+<script src="/js/charts.js"></script>
+<script src="/js/views.js"></script>
+<script src="/js/views2.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>
