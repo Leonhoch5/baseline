@@ -2,6 +2,7 @@
 const IC = {
   today: '<circle cx="12" cy="12" r="8.5"/><path d="M12 12l4.5-3.5"/><path d="M12 3.5v2M3.5 12h2M18.5 12h2"/>',
   recovery: '<path d="M12 20.5s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2z"/><path d="M7.5 12.5h2.5l1.5-2.5 2 4 1.5-1.5h1.5"/>',
+  model: '<path d="M4 19.5h16"/><path d="M6.5 16l4-5 3 3 4.5-6.5"/><circle cx="18" cy="7.5" r="1.2"/>',
   sleep: '<path d="M19.5 14.5A8 8 0 1 1 9.5 4.5a6.5 6.5 0 0 0 10 10z"/>',
   strain: '<path d="M13 3L5 13.5h6l-1 7.5 8-10.5h-6z"/>',
   activities: '<path d="M3 12h4l2.5-6 4 12 2.5-6H21"/>',
@@ -98,7 +99,7 @@ VIEWS.today = (v) => {
     return;
   }
   const z = recoveryZone(d.rec), coach = coachFor(d, M);
-  const recNote = d.rec != null ? `HRV ${d.hrv != null ? Math.round(d.hrv) + ' ms' : '–'} · RHR ${d.rhr ?? '–'}` : d.calibrating ? 'Needs 4 nights of data' : 'Wear your Watch to sleep';
+  const recNote = d.rec != null ? `HRV ${d.hrv != null ? Math.round(d.hrv) + ' ms' : '–'} · RHR ${d.rhr ?? '–'}` + (d.recConf ? ` · ${d.recConf.level} confidence` : '') : d.calibrating ? 'Needs 4 nights of data' : 'Wear your Watch to sleep';
   const sleepNote = d.sleepMin != null ? `${fmtHM(d.sleepMin)} of ${fmtHM(d.need)} needed` : 'No sleep recorded';
   const [lo, hi] = coach.target;
   const st = d.strain || 0;
@@ -120,6 +121,7 @@ VIEWS.today = (v) => {
     </div>
   </div>
   ${coachPanelHtml(M, S.date)}
+  ${outlookHtml(M, true)}
   <div class="tiles">
     ${tile('HRV', d.hrv != null ? Math.round(d.hrv) : null, 'ms', hrvD[0], hrvD[1])}
     ${tile('Resting HR', d.rhr, 'bpm', rhrD[0], rhrD[1])}
@@ -227,7 +229,7 @@ VIEWS.strain = (v) => {
   const zn = d.zones, ztot = zn.reduce((a, b) => a + b, 0);
   const last14 = []; for (let i = 13; i >= 0; i--) { const k = addDays(S.date, -i); last14.push(M.day[k] || { date: k }); }
   const acwr = d.acwr;
-  const acwrState = acwr == null ? ['Building', ''] : acwr > 1.5 ? ['Spike: injury risk up', 'lo'] : acwr > 1.3 ? ['Ramping fast', 'mid'] : acwr >= 0.8 ? ['Sweet spot', 'hi'] : ['Detraining', 'mid'];
+  const acwrState = acwr == null ? ['Building', ''] : acwr > 1.5 ? ['Big jump vs usual', 'lo'] : acwr > 1.3 ? ['Ramping fast', 'mid'] : acwr >= 0.8 ? ['Close to usual', 'hi'] : ['Below usual', 'mid'];
   const last42 = []; for (let i = 41; i >= 0; i--) { const k = addDays(S.date, -i); last42.push(M.day[k] || { date: k }); }
   v.innerHTML = `
   ${statusPanelHtml(trainingStatus(M, S.date), true)}
@@ -368,7 +370,20 @@ VIEWS.journal = (v) => {
   const notReady = ins.filter(i => !i.ready);
   const maxAbs = Math.max(10, ...ready.map(i => Math.abs(i.delta)));
   const recent = []; for (let i = 6; i >= 0; i--) recent.push(addDays(M.today || todayYmd(), -i - 1));
-  v.innerHTML = `
+  const ck = addDays(date, 1), ce = (M.journal || {})[ck] || {};
+  const scale = (key, n, lo, hi, dt, cur) => `<div class="seg scale-seg" role="group" aria-label="${esc(key)}">${Array.from({ length: n }, (_, k) => k + lo).map(x => `<button aria-pressed="${cur === x}" data-action="ck-set" data-date="${dt}" data-key="${key}" data-val="${x}">${x}</button>`).join('')}</div><div class="scale-ends"><span>${esc(lo === 1 && n === 10 ? 'poor' : 'none')}</span><span>${esc(n === 10 ? 'excellent' : 'severe')}</span></div>`;
+  const dayActs = S.model && S.model.day && S.model.day[date] ? S.model.day[date].acts : [];
+  const checkinHtml = ck > todayYmd() ? '' : `<div class="panel"><div class="panel-h"><h2>Morning check-in</h2><span class="aside">${esc(fmtDay(ck))} · ${ce.readiness != null ? 'saved' : 'not filled in yet'}</span></div>
+    <p class="sub" style="margin:0 0 10px">Ten seconds each morning. These answers are what the app learns from: they let it check its predictions against how you actually felt.</p>
+    <div class="ck"><label>How ready do you feel to train?</label>${scale('readiness', 10, 1, 10, ck, ce.readiness)}</div>
+    <div class="ck"><label>General fatigue</label>${scale('fatigue', 5, 1, 5, ck, ce.fatigue)}</div>
+    <div class="ck"><label>Muscle soreness</label>${scale('soreness', 5, 1, 5, ck, ce.soreness)}</div>
+    <div class="ck"><label>How well did you sleep?</label>${scale('sleepQ', 5, 1, 5, ck, ce.sleepQ)}</div>
+  </div>
+  <div class="panel"><div class="panel-h"><h2>Session effort</h2><span class="aside">${esc(fmtDay(date))} · RPE 0–10, about 30 min after the session</span></div>
+    ${dayActs.length ? dayActs.map(a => { const r = e.rpe ? e.rpe[a.gid] : (saved.rpe || {})[a.gid]; return `<div class="ck"><label>${esc(a.name)} <span class="muted" style="font-weight:400">· ${fmtDurLong(a.durS / 60)}</span></label><div class="seg scale-seg" role="group">${Array.from({ length: 11 }, (_, k) => k).map(x => `<button aria-pressed="${r === x}" data-action="rpe-set" data-date="${date}" data-gid="${esc(a.gid)}" data-val="${x}">${x}</button>`).join('')}</div><div class="scale-ends"><span>rest</span><span>maximal</span></div></div>`; }).join('') + '<p class="muted" style="font-size:12px;margin:8px 0 0">Effort × minutes gives session-RPE load (Foster et al. 2001), which works across swimming, strength and other sessions where heart rate is unreliable.</p>' : '<p class="muted" style="margin:0">No workouts on this day.</p>'}
+  </div>`;
+  v.innerHTML = checkinHtml + `
   <div class="cols">
     <div class="panel"><div class="panel-h"><h2>${esc(fmtDay(date))}</h2><span class="aside">${dirty ? 'Unsaved changes' : saved && Object.keys(saved).length ? 'Saved' : 'Not logged yet'}</span></div>
       <p class="sub" style="margin:0 0 6px">What happened on this day? Answers are compared with your recovery the next morning.</p>
@@ -526,7 +541,7 @@ function syncStatusHtml(s) {
 }
 
 function topbarHtml() {
-  const titles = { recovery: 'Recovery', today: 'Today', sleep: 'Sleep', strain: 'Strain', activities: 'Activities', trends: 'Trends', journal: 'Journal', plan: 'Plan', data: 'Import & settings' };
+  const titles = { recovery: 'Recovery', today: 'Today', sleep: 'Sleep', strain: 'Strain', activities: 'Activities', trends: 'Trends', journal: 'Journal', plan: 'Plan', model: 'How it works', data: 'Import & settings' };
   let right = '';
   const M = S.model;
   if (['today', 'recovery', 'sleep', 'strain'].includes(S.tab) && M && !M.empty) {

@@ -315,3 +315,34 @@ table.t.guide-t th, table.t.guide-t td { text-align: left; }
 .plan-chip.add b { color: var(--accent); }
 .chip.st-upcoming { color: var(--accent); }
 input[type="date"] { background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; min-width: 0; }
+
+.ck { display: grid; gap: 6px; padding: 10px 0; border-top: 1px solid var(--line); }
+.ck:first-of-type { border-top: 0; }
+.ck label { font-weight: 500; }
+.scale-seg { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); width: 100%; }
+.scale-seg button { padding: 7px 0; }
+.scale-ends { display: flex; justify-content: space-between; font: 500 10px var(--font-mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+
+/* ---- model / calibration ---- */
+.ol { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.ol:first-of-type { border-top: 0; }
+.ol > div:first-child { display: grid; gap: 2px; min-width: 0; font-size: 14px; }
+.ol > div:first-child .muted { font-size: 12px; }
+.ol-v { display: grid; justify-items: end; text-align: right; }
+.ol-v .num { font: 600 24px/1.1 var(--font-display); font-variant-numeric: tabular-nums; }
+.ol-v small { font: 400 11px/1.4 var(--font-mono); color: var(--fg-2); }
+.acc { padding: 14px 0; border-top: 1px solid var(--line); }
+.acc:first-of-type { border-top: 0; padding-top: 4px; }
+.acc h3 { margin: 0; font: 600 18px/1.2 var(--font-display); text-transform: uppercase; letter-spacing: .02em; }
+table.t tr.on td { color: var(--fg); font-weight: 600; }
+table.t tr.sel td { border-top: 2px solid var(--line); color: var(--fg-2); font-style: italic; }
+details.method { border-top: 1px solid var(--line); padding: 10px 0; }
+details.method summary { cursor: pointer; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; list-style: none; }
+details.method summary::-webkit-details-marker { display: none; }
+details.method summary::before { content: "+"; font: 500 14px var(--font-mono); color: var(--fg-2); width: 12px; }
+details.method[open] summary::before { content: "–"; }
+details.method dl { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 6px 16px; margin: 12px 0 4px; font-size: 13px; line-height: 1.5; }
+details.method dt { color: var(--fg-2); font: 500 11px/1.9 var(--font-mono); text-transform: uppercase; letter-spacing: .05em; }
+details.method dd { margin: 0; }
+details.method dd a { color: var(--accent); }
+@media (max-width: 640px) { details.method dl { grid-template-columns: 1fr; } details.method dt { margin-top: 6px; } .ol-v .num { font-size: 20px; } }

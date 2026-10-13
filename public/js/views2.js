@@ -106,7 +106,8 @@ VIEWS.recovery = (v) => {
       <div class="dial" style="border:0;padding:0;cursor:default">${ringSvg(d.rec != null ? d.rec / 100 : 0, recColor(d.rec), d.rec != null ? d.rec + '%' : '—', d.rec != null ? REC_WORD[z].toUpperCase() : 'NO SCORE')}</div>
       <div style="display:grid;gap:8px;min-width:0"><div class="eyebrow">Recovery</div>
         <div style="font:600 26px/1.1 var(--font-display);text-transform:uppercase">${d.rec == null ? 'No score yet' : z === 'hi' ? 'Ready to perform' : z === 'mid' ? 'Moderately recovered' : 'Body needs rest'}</div>
-        <p class="sub" style="margin:0;font-size:13px">${d.rec == null ? 'Recovery needs last night’s HRV and resting heart rate from your Watch. It appears after a few synced nights.' : z === 'hi' ? 'Your body handled recent strain well. A good day for intensity.' : z === 'mid' ? 'You can train, but your body isn’t fully topped up. Moderate effort fits best.' : 'Your body is still dealing with strain, stress or short sleep. Keep today light.'}</p></div>
+        <p class="sub" style="margin:0;font-size:13px">${d.rec == null ? 'Recovery needs last night’s HRV and resting heart rate from your Watch. It appears after a few synced nights.' : z === 'hi' ? 'Your body handled recent strain well. A good day for intensity.' : z === 'mid' ? 'You can train, but your body isn’t fully topped up. Moderate effort fits best.' : 'Your body is still dealing with strain, stress or short sleep. Keep today light.'}</p>
+        ${d.recConf ? `<p class="muted" style="margin:0;font-size:12px"><span class="chip">${esc(d.recConf.level)} confidence</span> ${esc((d.recConf.reasons || []).join(' · '))}</p>` : ''}</div>
     </div>
     <div class="panel"><div class="panel-h"><h2>What drove it</h2></div>${contributorsHtml(d)}</div>
   </div>

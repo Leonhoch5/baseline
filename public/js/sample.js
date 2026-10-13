@@ -97,7 +97,11 @@ function makeSampleData() {
     const load = loadFromHist(hb, 189) + (W && W.kind === 'strava' ? wDur * 2.6 : 0);
     fatigue = fatigue * 0.8 + load / 260 * 0.35;
     if (!isToday && R() < 0.75) {
-      jdoc(m).entries[date] = { alcohol: tonightAlcohol, lateCaffeine: R() < 0.2, lateMeal: R() < 0.25, screens: R() < 0.5, stretch: R() < 0.4, meditation: R() < 0.3, sauna: R() < 0.1, sick: false, travel: R() < 0.05, stress: 1 + Math.floor(R() * 5), note: '' };
+      const nx = addDays(date, 1), jm = nx.slice(0, 7);
+      const ready = clamp(Math.round(8.2 - fatigue * 1.6 + rn() * 0.9 - (tonightAlcohol ? 1.2 : 0)), 1, 10);
+      const jn = jdoc(jm).entries[nx] || (jdoc(jm).entries[nx] = {});
+      Object.assign(jn, { readiness: ready, fatigue: clamp(Math.round(1 + fatigue * 1.5 + rn() * 0.6), 1, 5), soreness: clamp(Math.round(1 + fatigue + rn() * 0.7), 1, 5), sleepQ: clamp(Math.round(3.6 + rn() * 0.8 - (tonightAlcohol ? 0.8 : 0)), 1, 5) });
+      jdoc(m).entries[date] = { ...(jdoc(m).entries[date] || {}), alcohol: tonightAlcohol, lateCaffeine: R() < 0.2, lateMeal: R() < 0.25, screens: R() < 0.5, stretch: R() < 0.4, meditation: R() < 0.3, sauna: R() < 0.1, sick: false, travel: R() < 0.05, stress: 1 + Math.floor(R() * 5), note: '' };
     }
     prevAlcohol = tonightAlcohol;
   }

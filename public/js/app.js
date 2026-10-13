@@ -1,7 +1,7 @@
 // ---------- app state, storage, actions ----------
-function emptyData() { return { apple: {}, strava: {}, journal: {}, planMeta: null, planSessions: [], planWeeks: [], plans: [], planChecks: {}, profile: {}, overlaps: { split: {} }, metaApple: null, metaStrava: null, metaDrive: null }; }
-const TABS = ['today', 'recovery', 'sleep', 'strain', 'activities', 'trends', 'journal', 'plan', 'data'];
-const COLLS = ['apple', 'strava', 'journal', 'planSessions', 'planWeeks', 'plans', 'plan', 'settings', 'meta'];
+function emptyData() { return { apple: {}, strava: {}, journal: {}, planMeta: null, planSessions: [], planWeeks: [], plans: [], planChecks: {}, preds: {}, profile: {}, overlaps: { split: {} }, metaApple: null, metaStrava: null, metaDrive: null }; }
+const TABS = ['today', 'recovery', 'sleep', 'strain', 'activities', 'trends', 'journal', 'plan', 'model', 'data'];
+const COLLS = ['apple', 'strava', 'journal', 'planSessions', 'planWeeks', 'plans', 'plan', 'settings', 'meta', 'preds'];
 const S = {
   tab: 'today', date: todayYmd(), jdate: addDays(todayYmd(), -1), range: 90, actFilter: 'all', actLimit: 30, ovlLimit: 8, planAll: false,
   sample: false, sampleData: null, real: emptyData(), model: null, db: null, dbMode: 'loading', loaded: {},
@@ -12,7 +12,7 @@ function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storag
 function hasRealData() { return Object.keys(S.real.apple).length > 0 || Object.keys(S.real.strava).length > 0; }
 function cur() { return S.sample ? S.sampleData : S.real; }
 let recomputeT = null;
-function recompute() { try { S.model = enrichModel(buildModel(cur())); } catch (e) { console.error(e); S.model = null; } }
+function recompute() { try { const D = cur(); S.model = calibrate(enrichModel(buildModel(D)), D); schedulePredLog(); } catch (e) { console.error(e); S.model = null; } }
 function changed() { clearTimeout(recomputeT); recomputeT = setTimeout(() => { recompute(); render(); }, 40); }
 
 function bannerHtml() {
@@ -63,6 +63,7 @@ async function initDb() {
   sub('journal', docs => { S.real.journal = byId(docs); });
   sub('planSessions', docs => { S.real.planSessions = docs.map(d => ({ id: d.id, ...d.data() })); });
   sub('planWeeks', docs => { S.real.planWeeks = docs.map(d => ({ id: d.id, ...d.data() })); });
+  sub('preds', docs => { const o = {}; docs.forEach(d => { o[d.id] = d.data(); }); S.real.preds = o; });
   sub('plans', docs => { S.real.plans = docs.map(d => ({ ...d.data(), id: d.id })); });
   sub('plan', docs => { const m = docs.find(d => d.id === 'meta'), c = docs.find(d => d.id === 'checks'); S.real.planMeta = m ? m.data() : null; S.real.planChecks = c ? c.data() : {}; });
   sub('settings', docs => { const p = docs.find(d => d.id === 'profile'), o = docs.find(d => d.id === 'overlaps'); S.real.profile = p ? p.data() : {}; S.real.overlaps = o ? o.data() : { split: {} }; });
@@ -87,6 +88,7 @@ async function writeDoc(path, data) {
   else if (path === 'settings/profile') S.real.profile = data;
   else if (path === 'settings/overlaps') S.real.overlaps = data;
   else if (path === 'plan/checks') S.real.planChecks = data;
+  else if (coll === 'preds') S.real.preds = { ...(S.real.preds || {}), [id]: data };
   else if (coll === 'planWeeks') { S.real.planWeeks = S.real.planWeeks.filter(w => w.id !== id).concat([{ ...data, id }]); }
   else if (coll === 'plans') { S.real.plans = S.real.plans.filter(x => x.id !== id).concat([{ ...data, id }]); }
 }
@@ -384,6 +386,8 @@ const ACTIONS = {
       delete S.jdraft[d]; changed();
     } catch (err) { b.disabled = false; const st = document.getElementById('jstatus'); if (st) st.textContent = humanError(err); }
   },
+  'ck-set': b => saveJournalPatch(b.dataset.date, j => { const k = b.dataset.key, v = +b.dataset.val; if (j[k] === v) delete j[k]; else j[k] = v; }),
+  'rpe-set': b => saveJournalPatch(b.dataset.date, j => { const g = b.dataset.gid, v = +b.dataset.val; j.rpe = { ...(j.rpe || {}) }; if (j.rpe[g] === v) delete j.rpe[g]; else j.rpe[g] = v; }),
   jdiscard: () => { delete S.jdraft[S.jdate]; render(); },
   jdate: b => { S.jdate = b.dataset.date; render(); },
   jday: b => { const n = addDays(S.jdate, +b.dataset.d); if (n <= todayYmd()) { S.jdate = n; render(); } },
@@ -420,6 +424,31 @@ const ACTIONS = {
     } catch (e) { if (st) st.textContent = humanError(e); }
   },
 };
+// Log tomorrow's predictions once, on the day they are made, so accuracy can later be checked on genuinely unseen outcomes.
+let predLogT = null;
+function schedulePredLog() {
+  clearTimeout(predLogT);
+  predLogT = setTimeout(async () => {
+    const M = S.model;
+    if (!M || M.empty || S.sample || S.dbMode !== 'live' || S.owner === false || !S.db || !M.pred) return;
+    const out = {};
+    for (const k in M.pred) { const c = M.pred[k].current; if (c && c.date === addDays(todayYmd(), 1)) out[k] = clean({ pred: Math.round(c.pred * 1000) / 1000, lo: c.lo != null ? Math.round(c.lo * 1000) / 1000 : null, hi: c.hi != null ? Math.round(c.hi * 1000) / 1000 : null, method: c.method, version: CAL_VERSION, madeAt: new Date().toISOString() }); }
+    if (!Object.keys(out).length) return;
+    const date = addDays(todayYmd(), 1), m = date.slice(0, 7);
+    const doc = (S.real.preds || {})[m] || { entries: {} };
+    const have = (doc.entries || {})[date] || {};
+    const add = {}; for (const k in out) if (!have[k]) add[k] = out[k];
+    if (!Object.keys(add).length) return;
+    try { await writeDoc('preds/' + m, { entries: { ...(doc.entries || {}), [date]: { ...have, ...add } } }); } catch (e) { console.warn('pred log', e); }
+  }, 2500);
+}
+async function saveJournalPatch(date, fn) {
+  const m = date.slice(0, 7), data = cur();
+  const entries = { ...((data.journal[m] && data.journal[m].entries) || {}) };
+  const e = { ...(entries[date] || {}) }; fn(e); entries[date] = e;
+  try { if (S.sample) { S.sampleData.journal[m] = { entries }; changed(); } else await writeDoc('journal/' + m, { entries }); }
+  catch (err) { console.warn(err); }
+}
 // ---- adding a plan ----
 function rerenderImport() { const el = document.getElementById('planImport'); if (el) el.outerHTML = planImportHtml(); }
 async function readPlanFiles(fileList) {
@@ -498,7 +527,7 @@ function wireDrop(v) {
 let lastW = 0, resizeT = null;
 function boot() {
   const nav = document.getElementById('nav');
-  const labels = { today: 'Today', recovery: 'Recovery', sleep: 'Sleep', strain: 'Strain', activities: 'Activities', trends: 'Trends', journal: 'Journal', plan: 'Plan', data: 'Import & settings' };
+  const labels = { today: 'Today', recovery: 'Recovery', sleep: 'Sleep', strain: 'Strain', activities: 'Activities', trends: 'Trends', journal: 'Journal', plan: 'Plan', model: 'Model', data: 'Import & settings' };
   nav.innerHTML = TABS.map(t => `<button data-tab="${t}">${icon(IC[t])}<span>${labels[t]}</span></button>`).join('');
   nav.addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) setTab(b.dataset.tab); });
   document.addEventListener('click', e => { const b = e.target.closest('[data-action]'); if (!b || b.disabled) return; const fn = ACTIONS[b.dataset.action]; if (fn) { e.preventDefault(); fn(b, e); } });
