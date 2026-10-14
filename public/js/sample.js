@@ -118,7 +118,7 @@ function makeSampleData() {
   });
   return {
     apple, strava, journal, planSessions,
-    planMeta: { name: 'Sample: half-marathon build', goal: 'Example plan so you can see how the Plan tab works', startDate: addDays(mon, -7), endDate: addDays(mon, 13) },
+    planMeta: { name: 'Sample: half-marathon build', goal: 'Example plan so you can see how the Plan tab works', startDate: addDays(mon, -7), endDate: addDays(mon, 13), raceName: 'Sample City Half Marathon', raceDate: addDays(mon, 13) },
     profile: {}, overlaps: { split: {} },
     metaApple: { importedAt: new Date().toISOString(), hrMaxEst: 189, sample: true }, metaStrava: { sample: true }
   };

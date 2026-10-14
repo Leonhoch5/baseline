@@ -1,6 +1,12 @@
 // ---------- app state, storage, actions ----------
-function emptyData() { return { apple: {}, strava: {}, journal: {}, planMeta: null, planSessions: [], planWeeks: [], plans: [], planChecks: {}, preds: {}, profile: {}, overlaps: { split: {} }, metaApple: null, metaStrava: null, metaDrive: null }; }
-const TABS = ['today', 'recovery', 'sleep', 'strain', 'activities', 'trends', 'journal', 'plan', 'model', 'data'];
+function emptyData() { return { apple: {}, strava: {}, journal: {}, planMeta: null, planSessions: [], planWeeks: [], plans: [], planChecks: {}, preds: {}, profile: {}, tests: { list: [] }, overlaps: { split: {} }, metaApple: null, metaStrava: null, metaDrive: null }; }
+// five main sections; the leaf views inside them keep their own ids (used in links and the URL)
+const GROUPS = { today: ['today'], sleep: ['sleep'], training: ['strain', 'activities', 'plan', 'race'], trends: ['trends', 'recovery', 'model'], journal: ['journal'] };
+const NAV = ['today', 'sleep', 'training', 'trends', 'journal'];
+const NAV_LABEL = { today: 'Today', sleep: 'Sleep', training: 'Training', trends: 'Trends', journal: 'Journal', data: 'Settings' };
+const SUB_LABEL = { strain: 'Load', activities: 'Activities', plan: 'Plan', race: 'Race', trends: 'Trends', recovery: 'Recovery', model: 'How it works' };
+const TABS = [...Object.values(GROUPS).flat(), 'data'];
+function groupOf(t) { for (const g in GROUPS) if (GROUPS[g].includes(t)) return g; return t; }
 const COLLS = ['apple', 'strava', 'journal', 'planSessions', 'planWeeks', 'plans', 'plan', 'settings', 'meta', 'preds'];
 const S = {
   tab: 'today', date: todayYmd(), jdate: addDays(todayYmd(), -1), range: 90, actFilter: 'all', actLimit: 30, ovlLimit: 8, planAll: false,
@@ -12,7 +18,7 @@ function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storag
 function hasRealData() { return Object.keys(S.real.apple).length > 0 || Object.keys(S.real.strava).length > 0; }
 function cur() { return S.sample ? S.sampleData : S.real; }
 let recomputeT = null;
-function recompute() { try { const D = cur(); S.model = calibrate(enrichModel(buildModel(D)), D); schedulePredLog(); } catch (e) { console.error(e); S.model = null; } }
+function recompute() { try { const D = cur(); S.model = calibrate(enrichModel(buildModel(D)), D); try { S.model.race = raceModel(S.model, D); } catch (e) { console.error(e); } schedulePredLog(); } catch (e) { console.error(e); S.model = null; } }
 function changed() { clearTimeout(recomputeT); recomputeT = setTimeout(() => { recompute(); render(); }, 40); }
 
 function bannerHtml() {
@@ -30,7 +36,10 @@ function railFoot() {
 }
 function render() {
   hideTip();
-  document.querySelectorAll('#nav button').forEach(b => { if (b.dataset.tab === S.tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+  const grp = groupOf(S.tab);
+  document.querySelectorAll('#nav button, #gear').forEach(b => { if (b.dataset.tab === grp) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+  const sub = document.getElementById('subnav'), leaves = GROUPS[grp] || [];
+  sub.innerHTML = leaves.length > 1 ? `<div class="subnav" role="tablist" aria-label="${esc(NAV_LABEL[grp])}">${leaves.map(t => `<button role="tab" aria-selected="${t === S.tab}" data-action="tab" data-tab="${t}">${SUB_LABEL[t]}</button>`).join('')}</div>` : '';
   document.getElementById('topbar').innerHTML = topbarHtml();
   document.getElementById('banner').innerHTML = bannerHtml();
   const v = document.getElementById('view');
@@ -42,8 +51,9 @@ function render() {
   lastW = window.innerWidth;
 }
 function setTab(t) {
+  if (GROUPS[t] && !GROUPS[t].includes(t)) { const last = lsGet('baseline.sub.' + t); t = GROUPS[t].includes(last) ? last : GROUPS[t][0]; }
   if (!TABS.includes(t)) return;
-  S.tab = t; lsSet('baseline.tab', t);
+  S.tab = t; lsSet('baseline.tab', t); lsSet('baseline.sub.' + groupOf(t), t);
   try { history.replaceState(null, '', '#' + t); } catch (e) { /* ignore */ }
   render(); window.scrollTo({ top: 0 });
 }
@@ -66,7 +76,7 @@ async function initDb() {
   sub('preds', docs => { const o = {}; docs.forEach(d => { o[d.id] = d.data(); }); S.real.preds = o; });
   sub('plans', docs => { S.real.plans = docs.map(d => ({ ...d.data(), id: d.id })); });
   sub('plan', docs => { const m = docs.find(d => d.id === 'meta'), c = docs.find(d => d.id === 'checks'); S.real.planMeta = m ? m.data() : null; S.real.planChecks = c ? c.data() : {}; });
-  sub('settings', docs => { const p = docs.find(d => d.id === 'profile'), o = docs.find(d => d.id === 'overlaps'); S.real.profile = p ? p.data() : {}; S.real.overlaps = o ? o.data() : { split: {} }; });
+  sub('settings', docs => { const p = docs.find(d => d.id === 'profile'), o = docs.find(d => d.id === 'overlaps'), t = docs.find(d => d.id === 'tests'); S.real.tests = t ? t.data() : { list: [] }; S.real.profile = p ? p.data() : {}; S.real.overlaps = o ? o.data() : { split: {} }; });
   sub('meta', docs => { const a = docs.find(d => d.id === 'apple'), s = docs.find(d => d.id === 'strava'), g = docs.find(d => d.id === 'gdrive'); S.real.metaApple = a ? a.data() : null; S.real.metaStrava = s ? s.data() : null; S.real.metaDrive = g ? g.data() : null; });
   setTimeout(() => { if (S.dbMode === 'loading') { S.dbMode = 'live'; changed(); } }, 12000);
   try { const user = await window.claude.use('user'); if (user) { S.owner = await user.isOwner(); if (S.owner === false && !hasRealData()) changed(); } } catch (e) { /* unknown viewer */ }
@@ -87,6 +97,7 @@ async function writeDoc(path, data) {
   else if (path === 'meta/gdrive') S.real.metaDrive = data;
   else if (path === 'settings/profile') S.real.profile = data;
   else if (path === 'settings/overlaps') S.real.overlaps = data;
+  else if (path === 'settings/tests') S.real.tests = data;
   else if (path === 'plan/checks') S.real.planChecks = data;
   else if (coll === 'preds') S.real.preds = { ...(S.real.preds || {}), [id]: data };
   else if (coll === 'planWeeks') { S.real.planWeeks = S.real.planWeeks.filter(w => w.id !== id).concat([{ ...data, id }]); }
@@ -319,6 +330,38 @@ async function saveProfile(patch) {
   for (const k in patch) { if (patch[k] == null || patch[k] === '') delete next[k]; else next[k] = patch[k]; }
   await writeDoc('settings/profile', next);
 }
+// ---- swim tests & manual race (Training › Race) ----
+async function saveTests(list) {
+  if (S.sample) { S.sampleData.tests = { list }; changed(); return; }
+  try { await writeDoc('settings/tests', { list }); } catch (e) { console.error(e); }
+  changed();
+}
+async function onForm(form) {
+  const f = Object.fromEntries(new FormData(form).entries()), msg = form.querySelector('#swimMsg');
+  const say = t => { if (msg) msg.textContent = t; };
+  if (form.dataset.form === 'swim-add') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(f.date || '')) return say('Pick a date.');
+    const id = 't' + Date.now().toString(36);
+    let entry;
+    if (f.kind === 'css') {
+      const t400 = parseClock(f.t400), t200 = parseClock(f.t200);
+      if (!(t400 > 200 && t400 < 1200) || !(t200 > 90 && t200 < 600)) return say('Enter both times as m:ss, e.g. 6:35.2 and 3:14.0.');
+      if (t400 <= t200 * 1.6) return say('The 400 m time looks too fast for that 200 m time. Check both.');
+      entry = { id, date: f.date, kind: 'css', t400, t200 };
+    } else {
+      const dist = f.kind === 'tt1500' ? 1500 : 1600, sec = parseClock(f.sec);
+      if (!(sec > dist * 0.6 && sec < dist * 3)) return say('Enter the time as mm:ss, e.g. 26:40.');
+      entry = { id, date: f.date, kind: 'tt', dist, sec };
+    }
+    const list = ((cur().tests && cur().tests.list) || []).concat([entry]).sort((a, b) => a.date < b.date ? -1 : 1);
+    await saveTests(list);
+  } else if (form.dataset.form === 'race-set') {
+    if (!f.name || !/^\d{4}-\d{2}-\d{2}$/.test(f.date || '')) return;
+    const race = { name: f.name.trim().slice(0, 80), date: f.date, goal: (f.goal || '').trim().slice(0, 200) };
+    if (S.sample) { S.sampleData.profile = { ...(S.sampleData.profile || {}), race }; changed(); return; }
+    await saveProfile({ race }); changed();
+  }
+}
 async function saveOverlaps(split) {
   if (S.sample) { S.sampleData.overlaps = { split }; changed(); return; }
   await writeDoc('settings/overlaps', { split }); changed();
@@ -327,6 +370,7 @@ async function saveOverlaps(split) {
 // ---- actions ----
 const ACTIONS = {
   tab: b => setTab(b.dataset.tab),
+  'swim-del': b => saveTests(((cur().tests && cur().tests.list) || []).filter(t => t.id !== b.dataset.id)),
   day: b => { const n = addDays(S.date, +b.dataset.d); if (n <= (S.model ? S.model.today : todayYmd())) { S.date = n; render(); } },
   goto: b => { S.date = b.dataset.date === 'today' ? (S.model ? S.model.today : todayYmd()) : b.dataset.date; render(); },
   range: b => { S.range = +b.dataset.n; render(); },
@@ -527,12 +571,14 @@ function wireDrop(v) {
 let lastW = 0, resizeT = null;
 function boot() {
   const nav = document.getElementById('nav');
-  const labels = { today: 'Today', recovery: 'Recovery', sleep: 'Sleep', strain: 'Strain', activities: 'Activities', trends: 'Trends', journal: 'Journal', plan: 'Plan', model: 'Model', data: 'Import & settings' };
-  nav.innerHTML = TABS.map(t => `<button data-tab="${t}">${icon(IC[t])}<span>${labels[t]}</span></button>`).join('');
+  nav.innerHTML = NAV.map(t => `<button data-tab="${t}">${icon(IC[t])}<span>${NAV_LABEL[t]}</span></button>`).join('');
   nav.addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) setTab(b.dataset.tab); });
+  const gear = document.getElementById('gear'); gear.innerHTML = `${icon(IC.gear)}<span>Settings</span>`; gear.addEventListener('click', () => setTab('data'));
   document.addEventListener('click', e => { const b = e.target.closest('[data-action]'); if (!b || b.disabled) return; const fn = ACTIONS[b.dataset.action]; if (fn) { e.preventDefault(); fn(b, e); } });
   document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role="button"][data-action]')) { e.preventDefault(); e.target.click(); } });
+  document.addEventListener('submit', e => { const f = e.target.closest('form[data-form]'); if (f) { e.preventDefault(); onForm(f); } });
   document.addEventListener('change', e => {
+    if (e.target.name === 'kind' && e.target.closest('form[data-form="swim-add"]')) { const fm = e.target.form, css = e.target.value === 'css'; fm.querySelectorAll('.f-css').forEach(x => { x.hidden = !css; }); fm.querySelectorAll('.f-tt').forEach(x => { x.hidden = css; }); }
     const I = S.planImport; if (!I) return;
     if (e.target.id === 'planFiles') { readPlanFiles([...e.target.files]); e.target.value = ''; }
     else if (e.target.id === 'planStart' && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) { I.start = e.target.value; if (I.spec) buildPreview(); rerenderImport(); }

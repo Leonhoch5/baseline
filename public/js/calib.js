@@ -1,7 +1,7 @@
 // ---------- calibration: robust personal baselines, documented load metrics, sleep regularity,
 // individual responses, and leakage-free prediction with temporal validation ----------
 const CAL_VERSION = 'calib-1.0';
-const CAL_FLOOR = { hrv: 0.05, rhr: 1.0, sleep: 20, mid: 15 };
+const CAL_FLOOR = { hrv: 0.05, rhr: 1.0, sleep: 20, mid: 15, resp: 0.3, temp: 0.12 };
 
 function robustStats(vals) {
   if (!vals.length) return null;
@@ -19,6 +19,8 @@ function calBaselines(M) {
     rhr: d => d.rhr != null ? d.rhr : null,
     sleep: d => d.sleepMin != null ? d.sleepMin : null,
     mid: d => sleepMidMin(d),
+    resp: d => d.resp != null ? d.resp : null,
+    temp: d => d.temp != null ? d.temp : null,
   };
   for (const key in get) {
     const x = ds.map(k => get[key](M.day[k]));

@@ -111,6 +111,7 @@ VIEWS.recovery = (v) => {
     </div>
     <div class="panel"><div class="panel-h"><h2>What drove it</h2></div>${contributorsHtml(d)}</div>
   </div>
+  ${bodySignalsHtml(M, S.date, true)}
   ${statusPanelHtml(trainingStatus(M, S.date), false)}
   <div class="cols">
     <div class="panel"><div class="panel-h"><h2>HRV trend</h2><span class="aside">ms, overnight</span></div>
@@ -131,3 +132,18 @@ VIEWS.recovery = (v) => {
   if (recs.length) barChart(v.querySelector('#c-r30'), { label: 'Recovery, last 30 days', yMax: 100, ticks: [0, 33, 66, 100], fmt: t => t + '%', onClick: it => { S.date = it.date; render(); },
     items: last30.map(x => ({ date: x.date, label: fmtDayShort(x.date), v: x.rec ?? null, color: recColor(x.rec), tip: { head: fmtDay(x.date), rows: x.rec != null ? [{ v: x.rec + '%', k: 'recovery', color: recColor(x.rec) }] : [{ v: 'No score' }] } })) });
 };
+
+function bodySignalsHtml(M, date, full) {
+  const b = bodySignals(M, date); if (!b) return '';
+  if (!full && b.level !== 'alert' && b.level !== 'watch') return '';
+  const STATE = { off: ['Out of range', 'lo'], edge: ['At the edge', 'mid'], ok: ['In range', 'hi'], building: ['Baseline building', ''], missing: ['No reading', ''] };
+  const rows = b.rows.map(r => `<div class="bs-row"><span class="bs-dot ${STATE[r.state][1]}"></span><b>${esc(r.label)}</b><span class="num">${esc(r.now || '–')}</span><span class="muted">${r.usual ? 'usual ' + esc(r.usual) : r.state === 'building' ? r.n28 + ' of 10 nights' : ''}</span><span class="chip ${STATE[r.state][1]}">${STATE[r.state][0]}</span></div>`).join('');
+  const why = [b.alcohol ? 'you logged alcohol last night' : '', b.hardDay ? 'yesterday was a hard training day' : '', b.sick ? 'you logged feeling sick' : ''].filter(Boolean);
+  const head = b.level === 'alert' ? 'Several body signals are off' : b.level === 'watch' ? 'Some body signals are drifting' : b.level === 'unknown' ? 'Body signals' : 'Body signals in your normal range';
+  const text = b.level === 'alert' || b.level === 'watch'
+    ? `${b.off + b.edge} of ${b.have} overnight measures moved away from your normal together${b.streak ? ', for the second night in a row' : ''}. This pattern often shows up with oncoming illness, heavy fatigue, alcohol, heat or poor sleep${why.length ? ' (' + why.join('; ') + ')' : ''}. It isn't a diagnosis. Keep today easy, and if you feel unwell, rest and see a doctor if it persists.`
+    : b.level === 'unknown' ? 'Needs about 10 nights of HRV, resting heart rate, breathing rate or wrist temperature to know your normal range.'
+    : 'Overnight HRV, resting heart rate, breathing rate and wrist temperature are within your usual range.';
+  return `<div class="panel bs ${b.level}"><div class="panel-h"><h2>${esc(head)}</h2>${full ? '<span class="aside">vs your last 28 nights</span>' : `<span class="aside"><button class="btn sm ghost" data-action="tab" data-tab="recovery">Details</button></span>`}</div>
+    <p class="sub" style="margin:0 0 10px;font-size:13px">${esc(text)}</p>${full || b.level === 'alert' ? `<div class="bs-rows">${rows}</div>` : ''}</div>`;
+}

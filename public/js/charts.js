@@ -81,13 +81,14 @@ function lineChart(el, o) {
   const iw = W - ml - mr, ih = H - mt - mb, n = o.labels.length;
   const all = [];
   o.series.forEach(s => s.values.forEach(v => v != null && all.push(v)));
+  (o.hlines || []).forEach(h => all.push(h.v));
   if (o.band) { o.band.lo.forEach(v => v != null && all.push(v)); o.band.hi.forEach(v => v != null && all.push(v)); }
   if (!all.length) { el.innerHTML = '<p class="muted">No data in this range yet.</p>'; return; }
   let lo = o.yMin != null ? o.yMin : Math.min(...all), hi = o.yMax != null ? o.yMax : Math.max(...all);
   const pad = (hi - lo || 1) * 0.12; if (o.yMin == null) lo -= pad; if (o.yMax == null) hi += pad;
   const ticks = niceTicks(lo, hi, 4); lo = Math.min(lo, ticks[0]); hi = Math.max(hi, ticks[ticks.length - 1]);
   const x = i => ml + (n === 1 ? iw / 2 : i * iw / (n - 1));
-  const y = v => mt + ih - (v - lo) / (hi - lo) * ih;
+  const y = o.invert ? v => mt + (v - lo) / (hi - lo) * ih : v => mt + ih - (v - lo) / (hi - lo) * ih;
   let s = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="${esc(o.label || '')}">`;
   for (const t of ticks) s += `<line x1="${ml}" x2="${W - mr}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)" stroke-width="1"/><text x="${ml - 6}" y="${y(t) + 3.5}" text-anchor="end">${esc(o.fmt ? o.fmt(t) : t)}</text>`;
   if (o.band) {
@@ -95,11 +96,14 @@ function lineChart(el, o) {
     for (let i = 0; i < n; i++) if (o.band.lo[i] != null && o.band.hi[i] != null) { top += (top ? 'L' : 'M') + x(i).toFixed(1) + ',' + y(o.band.hi[i]).toFixed(1); bot = 'L' + x(i).toFixed(1) + ',' + y(o.band.lo[i]).toFixed(1) + bot; }
     if (top) s += `<path d="${top}${bot}Z" fill="${o.band.color}" opacity="0.12"/>`;
   }
+  for (const h of o.hlines || []) s += `<line x1="${ml}" x2="${W - mr}" y1="${y(h.v)}" y2="${y(h.v)}" stroke="${h.color}" stroke-width="1.5" stroke-dasharray="5 4"/><text x="${h.start ? ml + 4 : W - mr - 4}" y="${y(h.v) - 5}" text-anchor="${h.start ? 'start' : 'end'}" fill="${h.color}">${esc(h.label || '')}</text>`;
+  for (const vl of o.vlines || []) if (vl.i >= 0 && vl.i < n) s += `<line x1="${x(vl.i)}" x2="${x(vl.i)}" y1="${mt}" y2="${mt + ih}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="2 3"/><text x="${x(vl.i) + (vl.i > n * 0.85 ? -4 : 4)}" y="${mt + 10}" text-anchor="${vl.i > n * 0.85 ? 'end' : 'start'}">${esc(vl.label || '')}</text>`;
   for (const se of o.series) {
+    if (se.dots) { se.values.forEach((v, i) => { if (v != null) s += `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.5" fill="${se.color}" opacity=".85"/>`; }); continue; }
     let p = '', pen = false, lastI = -1;
     se.values.forEach((v, i) => { if (v == null) { pen = false; return; } p += (pen ? 'L' : 'M') + x(i).toFixed(1) + ',' + y(v).toFixed(1); pen = true; lastI = i; });
-    s += `<path d="${p}" fill="none" stroke="${se.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
-    if (lastI >= 0) s += `<circle cx="${x(lastI)}" cy="${y(se.values[lastI])}" r="4" fill="${se.color}" stroke="var(--panel)" stroke-width="2"/>`;
+    s += `<path d="${p}" fill="none" stroke="${se.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"${se.dash ? ` stroke-dasharray="${se.dash}"` : ''}/>`;
+    if (lastI >= 0 && !se.noEnd) s += `<circle cx="${x(lastI)}" cy="${y(se.values[lastI])}" r="4" fill="${se.color}" stroke="var(--panel)" stroke-width="2"/>`;
   }
   const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(iw / 58))));
   o.labels.forEach((l, i) => { if ((n - 1 - i) % every === 0) s += `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${esc(l)}</text>`; });

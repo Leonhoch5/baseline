@@ -19,6 +19,11 @@ Static front end (`public/`) + Vercel serverless functions (`api/`) + Supabase (
    - `SUPABASE_URL` = Project URL
    - `SUPABASE_ANON_KEY` = anon public key
 3. Deploy. Check `https://<your-app>.vercel.app/api/health` returns `{"ok":true}`.
+4. For the iPhone sync (step 5) also add:
+   - `SUPABASE_SERVICE_ROLE_KEY` = service_role key (server only, never in the browser)
+   - `USER_EMAIL` = your login email (or `BASELINE_USER_ID` = your user id from Authentication → Users)
+   - `INGEST_TOKEN` = a long random secret, at least 16 characters (e.g. run `openssl rand -hex 24`)
+   Redeploy after adding them.
 
 ### 3. Move your data over
 ```bash
@@ -30,9 +35,29 @@ SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… USER_EMAIL=you@example.com npm ru
 ### 4. Use it
 Open the app, enter your email, open the link from the email. On iPhone: Safari → Share → *Add to Home Screen*.
 
+### 5. iPhone sync + morning notification (replaces Google Drive)
+The Shortcut sends its text straight to Baseline and gets this morning's summary back.
+1. In the **Baseline Sync** shortcut, open **Get Contents of URL** and change the URL to
+   `https://<your-app>.vercel.app/api/ingest?token=<INGEST_TOKEN>`
+   Keep *Method* POST and *Request Body* **File** (the final Text). The Apps Script is no longer needed.
+2. Replace **Show Result** with **Show Notification**: tap it and pick *Contents of URL* as the body.
+   You'll get something like:
+   ```
+   Recovery 59% · Maintain
+   Recovery 59% (yellow) · Sleep 93% · 7:52 h
+   HRV 52 ms · RHR 48
+   Today: Easy/recovery swim · 30 min
+   Maintain. Strain target 10–14.
+   ```
+3. **Automation** tab → **+** → **Wake Up** (Sleep) or **Alarm → Is Stopped** → *Run Immediately* → run **Baseline Sync**.
+   Sleep data is complete only after you wake, so a fixed time like 06:00 can miss the end of the night.
+4. Optional: a second shortcut with only **Get Contents of URL** (method GET, same URL) + **Show Notification** gives the summary any time without syncing.
+
+Answers: `401` wrong token · `400` empty body (Request Body must be File) · `500` server problem (see Vercel → Logs).
+
 ## Status
 - **Week 1 (done):** hosting, login, storage, data migration. Scores, charts, coaching and plans work as in the Claude version.
-- **Week 2:** Strava (own API app + webhook) and the iPhone Shortcut posting to `/api/ingest`. Until then, Strava sync and iPhone sync in the app don't work.
+- **Week 2:** iPhone Shortcut → `/api/ingest` with morning summary (done). Strava (own API app + webhook) still to do; until then Strava sync in the app doesn't work.
 - **Week 3:** plan import polish, home-screen app, optional notifications.
 - **Week 4:** run both versions side by side, then switch.
 
@@ -40,6 +65,6 @@ Open the app, enter your email, open the link from the email. On iPhone: Safari 
 - `public/index.html`: page shell and script order
 - `public/js/platform.js`: Supabase login + document storage (`docs` table)
 - `public/js/*.js`: the app (parsers, scoring model, insights, views)
-- `api/`: serverless functions
+- `api/`: serverless functions (`ingest.js` runs the same scoring code as the browser, from `public/js`)
 - `supabase/schema.sql`: database table and access rules
 - `scripts/import-export.mjs`: one-off import of the Claude-version export

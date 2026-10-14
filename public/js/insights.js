@@ -211,3 +211,52 @@ function dailyInsights(M, date) {
   if (mix) out.push({ tone: mix.tone, h: 'Intensity mix, last 4 weeks', t: mix.t, tab: 'strain' });
   return out.slice(0, 5);
 }
+
+// ---- body signals: several overnight measures off at once (WHOOP "Health Monitor" style) ----
+// Uses the robust personal baselines from calib.js (median / MAD of the previous 28 days).
+// A single measure moving is common; several moving the wrong way together is worth a heads-up.
+// It's a pattern flag, not a diagnosis.
+const BODY_SIG = [
+  { key: 'hrv', label: 'HRV', unit: 'ms', dir: -1, fmt: d => d.hrv != null ? Math.round(d.hrv) + ' ms' : null, typ: c => c.med != null ? Math.round(Math.exp(c.med)) + ' ms' : null },
+  { key: 'rhr', label: 'Resting heart rate', unit: 'bpm', dir: 1, fmt: d => d.rhr != null ? d.rhr + ' bpm' : null, typ: c => c.med != null ? Math.round(c.med) + ' bpm' : null },
+  { key: 'resp', label: 'Respiratory rate', unit: 'rpm', dir: 1, fmt: d => d.resp != null ? d.resp.toFixed(1) + ' rpm' : null, typ: c => c.med != null ? c.med.toFixed(1) + ' rpm' : null },
+  { key: 'temp', label: 'Wrist temperature', unit: '°C', dir: 1, fmt: d => d.temp != null ? d.temp.toFixed(2) + ' °C' : null, typ: c => c.med != null ? c.med.toFixed(2) + ' °C' : null },
+];
+function bodySignals(M, date) {
+  const d = M.day[date]; if (!d || !d.cal) return null;
+  const rows = BODY_SIG.map(s => {
+    const c = d.cal[s.key] || {};
+    const z = c.z != null ? c.z * s.dir : null;            // positive = in the "worse" direction
+    const state = z == null ? (c.x != null ? 'building' : 'missing') : z >= 2 ? 'off' : z >= 1.5 ? 'edge' : 'ok';
+    return { ...s, z, state, now: s.fmt(d), usual: s.typ(c), n28: c.n28 || 0 };
+  });
+  const have = rows.filter(r => r.z != null), off = rows.filter(r => r.state === 'off'), edge = rows.filter(r => r.state === 'edge');
+  const score = off.length + 0.5 * edge.length;
+  const level = have.length < 2 ? 'unknown' : off.length >= 2 && score >= 2.5 ? 'alert' : score >= 2 ? 'watch' : 'ok';
+  // two nights in a row?
+  let streak = 0;
+  if (level === 'alert' || level === 'watch') {
+    const p = M.day[addDays(date, -1)];
+    if (p && p.cal) { const po = BODY_SIG.filter(s => { const c = p.cal[s.key]; return c && c.z != null && c.z * s.dir >= 1.5; }).length; if (po >= 2) streak = 2; }
+  }
+  const J = M.journal || {}, prevJ = J[addDays(date, -1)] || {}, todayJ = J[date] || {};
+  return { level, rows, have: have.length, off: off.length, edge: edge.length, streak, sick: !!(todayJ.sick || prevJ.sick), alcohol: !!prevJ.alcohol, hardDay: (M.day[addDays(date, -1)] || {}).strain >= 16 };
+}
+
+// ---- short morning summary (iPhone notification after the Shortcut syncs; standalone /api/ingest) ----
+function morningSummary(M, date) {
+  if (!M || M.empty) return { title: 'Baseline', body: 'No data yet.' };
+  date = date || M.today;
+  const d = M.day[date] || { date }, c = coachFor(d, M);
+  const zw = { hi: 'green', mid: 'yellow', lo: 'red' }[recoveryZone(d.rec)];
+  const hm = m => m == null ? '–' : Math.floor(m / 60) + ':' + String(Math.round(m % 60)).padStart(2, '0');
+  const l1 = [d.rec != null ? `Recovery ${d.rec}% (${zw})` : 'Recovery: no score yet', d.sleepScore != null ? `Sleep ${d.sleepScore}% · ${hm(d.sleepMin)} h` : d.sleepMin != null ? `Sleep ${hm(d.sleepMin)} h` : 'No sleep recorded'].join(' · ');
+  const l2 = [d.hrv != null ? `HRV ${Math.round(d.hrv)} ms` : null, d.rhr != null ? `RHR ${d.rhr}` : null].filter(Boolean).join(' · ');
+  const P = c.planned[0];
+  const l3 = P ? `Today: ${P.title}${P.durationMin ? ' · ' + P.durationMin + ' min' : ''}${c.planned.length > 1 ? ` (+${c.planned.length - 1} more)` : ''}` : c.rest ? 'Today: rest day' : 'Nothing planned today';
+  let l4 = `${c.head}. Strain target ${c.target[0]}–${c.target[1]}.`;
+  const b = typeof bodySignals === 'function' && M.day[date] && M.day[date].cal ? bodySignals(M, date) : null;
+  if (b && b.level === 'alert') l4 = 'Several body signals are off (HRV, resting HR, breathing, temperature). Keep today easy. ' + l4;
+  else if (b && b.level === 'watch') l4 = 'Some body signals are drifting; take it easy if you feel off. ' + l4;
+  return { title: d.rec != null ? `Recovery ${d.rec}% · ${c.head}` : c.head, body: [l1, l2, l3, l4].filter(Boolean).join('\n'), rec: d.rec, sleepScore: d.sleepScore, head: c.head, bodySignals: b ? b.level : null };
+}

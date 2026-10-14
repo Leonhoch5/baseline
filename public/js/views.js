@@ -7,6 +7,9 @@ const IC = {
   strain: '<path d="M13 3L5 13.5h6l-1 7.5 8-10.5h-6z"/>',
   activities: '<path d="M3 12h4l2.5-6 4 12 2.5-6H21"/>',
   trends: '<path d="M4 4v16h16"/><path d="M7.5 15l4-4.5 3 3L20 7"/>',
+  training: '<path d="M13 3L5 13.5h6l-1 7.5 8-10.5h-6z"/>',
+  race: '<path d="M5.5 21V4"/><path d="M5.5 4.5h12l-2.5 4 2.5 4h-12"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/>',
   journal: '<path d="M6.5 3.5h11a1 1 0 0 1 1 1v16h-11a2 2 0 0 1-2-2v-14a1 1 0 0 1 1-1z"/><path d="M9 8h6.5M9 12h6.5M5.5 18.5a2 2 0 0 1 2-2h11"/>',
   plan: '<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8.5 3v4M15.5 3v4M8 14h2M11 14h2M14 14h2M8 17h2"/>',
   data: '<path d="M12 3.5v11M7.5 10l4.5 4.5 4.5-4.5"/><path d="M4.5 16.5v2a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-2"/>',
@@ -122,7 +125,11 @@ VIEWS.today = (v) => {
     </div>
   </div>
   ${coachPanelHtml(M, S.date)}
+  ${bodySignalsHtml(M, S.date)}
   ${outlookHtml(M, true)}
+  <div class="panel"><div class="panel-h"><h2>Activities</h2><span class="aside">${d.acts.length ? d.acts.length + ' today' : ''}</span></div>
+    ${d.acts.length ? `<div class="acts">${d.acts.map(a => actRow(a, M)).join('')}</div>` : '<p class="muted" style="margin:0">No workouts recorded on this day.</p>'}</div>
+  <details class="more" id="todayMore" ${lsGet('baseline.todayMore') === '1' ? 'open' : ''}><summary><span>Vitals &amp; heart rate</span><span class="muted">HRV ${d.hrv != null ? Math.round(d.hrv) : '–'} · RHR ${d.rhr ?? '–'} · resp ${d.resp != null ? d.resp.toFixed(1) : '–'}</span></summary>
   <div class="tiles">
     ${tile('HRV', d.hrv != null ? Math.round(d.hrv) : null, 'ms', hrvD[0], hrvD[1])}
     ${tile('Resting HR', d.rhr, 'bpm', rhrD[0], rhrD[1])}
@@ -133,11 +140,11 @@ VIEWS.today = (v) => {
   </div>
   <div class="panel"><div class="panel-h"><h2>Heart rate</h2><span class="aside">5-minute averages · zones from max HR ${M.prof.hrMax}</span></div>
     <div class="legend"><span><i style="background:var(--watch)"></i>Heart rate</span><span><i class="box" style="background:var(--sleep);opacity:.4"></i>Sleep</span><span><i class="box" style="background:var(--strain);opacity:.45"></i>Activity</span></div>
-    <div class="chart" id="c-day"></div></div>
-  <div class="panel"><div class="panel-h"><h2>Activities</h2><span class="aside">${d.acts.length ? d.acts.length + ' today' : ''}</span></div>
-    ${d.acts.length ? `<div class="acts">${d.acts.map(a => actRow(a, M)).join('')}</div>` : '<p class="muted" style="margin:0">No workouts recorded on this day.</p>'}</div>`;
-  const hd = hrDayData(d, M);
-  if (hd.hr.some(x => x != null)) dayChart(v.querySelector('#c-day'), hd); else v.querySelector('#c-day').innerHTML = '<p class="muted">No heart-rate readings for this day.</p>';
+    <div class="chart" id="c-day"></div></div></details>`;
+  const more = v.querySelector('#todayMore');
+  const draw = () => { const el = v.querySelector('#c-day'); if (!more.open || el.dataset.drawn) return; el.dataset.drawn = '1'; const hd = hrDayData(d, M); if (hd.hr.some(x => x != null)) dayChart(el, hd); else el.innerHTML = '<p class="muted">No heart-rate readings for this day.</p>'; };
+  more.addEventListener('toggle', () => { lsSet('baseline.todayMore', more.open ? '1' : '0'); draw(); });
+  draw();
 };
 
 VIEWS.sleep = (v) => {
@@ -543,7 +550,7 @@ function syncStatusHtml(s) {
 }
 
 function topbarHtml() {
-  const titles = { recovery: 'Recovery', today: 'Today', sleep: 'Sleep', strain: 'Strain', activities: 'Activities', trends: 'Trends', journal: 'Journal', plan: 'Plan', model: 'How it works', data: 'Import & settings' };
+  const titles = { today: 'Today', sleep: 'Sleep', journal: 'Journal', data: 'Settings', strain: 'Training', activities: 'Training', plan: 'Training', race: 'Training', trends: 'Trends', recovery: 'Trends', model: 'Trends' };
   let right = '';
   const M = S.model;
   if (['today', 'recovery', 'sleep', 'strain'].includes(S.tab) && M && !M.empty) {
