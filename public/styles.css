@@ -346,3 +346,10 @@ details.method dt { color: var(--fg-2); font: 500 11px/1.9 var(--font-mono); tex
 details.method dd { margin: 0; }
 details.method dd a { color: var(--accent); }
 @media (max-width: 640px) { details.method dl { grid-template-columns: 1fr; } details.method dt { margin-top: 6px; } .ol-v .num { font-size: 20px; } }
+.stage.ss { grid-template-columns: 150px minmax(0, 1fr) minmax(0, 260px); }
+.stage.ss .val b { color: var(--fg); }
+@media (max-width: 640px) {
+  .stage.ss { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "l v" "b b"; gap: 4px 10px; }
+  .stage.ss > span:first-child { white-space: nowrap; } .stage.ss .val { font-size: 12px; }
+  .stage.ss > span:first-child { grid-area: l; } .stage.ss .val { grid-area: v; } .stage.ss .bar { grid-area: b; }
+}

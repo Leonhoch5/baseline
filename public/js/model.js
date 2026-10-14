@@ -89,6 +89,49 @@ function baselineOf(arr) { // arr of numbers from the prior window
   if (arr.length < 4) return null;
   return { m: mean(arr), sd: stdev(arr) || 0, n: arr.length };
 }
+// ---- sleep score 0–100: duration plus quality (WHOOP / Garmin style composite) ----
+// Each part is scored 0–100, then combined with these weights. Parts without data are left out
+// and the remaining weights are rescaled, so a night with only a total still gets a (duration-based) score.
+const SLEEP_WEIGHTS = { dur: 0.40, eff: 0.15, cont: 0.10, stages: 0.10, cons: 0.15, stress: 0.10 };
+const SLEEP_PART_LABEL = { dur: 'Hours vs need', eff: 'Efficiency', cont: 'Disruptions', stages: 'Deep & REM', cons: 'Consistency', stress: 'Sleep stress' };
+function pw(x, pts) { // piecewise-linear through [[x, y], …] (x ascending), clamped at the ends
+  if (x <= pts[0][0]) return pts[0][1];
+  for (let i = 1; i < pts.length; i++) if (x <= pts[i][0]) { const [x0, y0] = pts[i - 1], [x1, y1] = pts[i]; return y0 + (y1 - y0) * (x - x0) / (x1 - x0); }
+  return pts[pts.length - 1][1];
+}
+function sleepScoreOf(day, s, base) {
+  const parts = {}, raw = {};
+  // 1. hours vs need (WHOOP "hours vs needed", Garmin "duration")
+  raw.dur = day.perf; parts.dur = pw(day.perf, [[0.5, 0], [0.7, 40], [0.85, 75], [0.95, 92], [1, 100]]);
+  if (s) {
+    const asleep = s.asleep || 0;
+    // 2. efficiency: asleep / in bed (85 % is the usual clinical threshold for good efficiency)
+    if (s.inBed && s.inBed >= asleep && s.inBed > 60) { raw.eff = asleep / s.inBed; parts.eff = pw(raw.eff, [[0.65, 0], [0.75, 40], [0.85, 75], [0.93, 100]]); }
+    // 3. disruptions: minutes awake after falling asleep, and number of awakenings
+    if (s.awake != null && s.segs && s.segs.length) {
+      raw.waso = s.awake; raw.wakes = s.wake || 0;
+      const w = pw(s.awake, [[10, 100], [30, 75], [60, 40], [90, 0]]), n = pw(raw.wakes, [[2, 100], [5, 70], [10, 20], [14, 0]]);
+      parts.cont = 0.6 * w + 0.4 * n;
+    }
+    // 4. deep + REM share of sleep (adult norms: deep ~13–23 %, REM ~20–25 %; Apple Watch reports less deep sleep than lab studies, so the deep curve is set lower)
+    if (asleep > 120 && (s.deep || s.rem)) {
+      raw.deepPct = s.deep / asleep; raw.remPct = s.rem / asleep;
+      parts.stages = 0.5 * pw(raw.deepPct, [[0.04, 0], [0.08, 50], [0.13, 100]]) + 0.5 * pw(raw.remPct, [[0.08, 0], [0.14, 55], [0.20, 100]]);
+    }
+    // 5. consistency: overlap of tonight's sleep window with the previous 4 nights (WHOOP uses a 4-day window)
+    if (day.cons != null) { raw.cons = day.cons; parts.cons = pw(day.cons, [[0.35, 0], [0.55, 40], [0.70, 75], [0.85, 100]]); }
+    // 6. sleep stress: overnight HRV and sleeping heart rate against your own 30-day baseline
+    const zs = [];
+    if (s.hrv != null && base.hrv && base.hrv.n >= 7) zs.push(clamp((Math.log(s.hrv) - base.hrv.m) / Math.max(base.hrv.sd, 0.08), -3, 3));
+    if (s.hrAvg != null && base.shr && base.shr.n >= 7) zs.push(-clamp((s.hrAvg - base.shr.m) / Math.max(base.shr.sd, 1.5), -3, 3));
+    if (zs.length) { raw.stressZ = mean(zs); parts.stress = pw(raw.stressZ, [[-2, 0], [-1, 45], [0, 85], [0.5, 100]]); }
+  }
+  let w = 0, sum = 0;
+  for (const k in parts) { parts[k] = Math.round(clamp(parts[k], 0, 100)); sum += SLEEP_WEIGHTS[k] * parts[k]; w += SLEEP_WEIGHTS[k]; }
+  const score = w ? Math.round(sum / w) : null;
+  return { sleepScore: score, sleepParts: parts, sleepRaw: raw, sleepScoreBasis: Object.keys(parts).length > 1 ? 'full' : 'duration' };
+}
+function sleepScoreWord(x) { return x == null ? null : x >= 90 ? 'Excellent' : x >= 80 ? 'Good' : x >= 60 ? 'Fair' : 'Poor'; }
 function clockIoU(a, b) { // sleep windows on a noon-anchored clock
   const pos = (ls) => (minOfDayLms(ls) - 720 + 1440) % 1440;
   const a0 = pos(a.ls), a1 = a0 + (a.le - a.ls) / 60000, b0 = pos(b.ls), b1 = b0 + (b.le - b.ls) / 60000;
@@ -129,8 +172,8 @@ function buildModel(D) {
   const dates = []; for (let d = first; d <= last; d = addDays(d, 1)) dates.push(d);
 
   const out = {};
-  const hist = { hrv: [], rhr: [], resp: [], temp: [] }; // [dayIndex, value], ascending
-  const ptr = { hrv: 0, rhr: 0, resp: 0, temp: 0 };
+  const hist = { hrv: [], rhr: [], resp: [], temp: [], shr: [] }; // [dayIndex, value], ascending
+  const ptr = { hrv: 0, rhr: 0, resp: 0, temp: 0, shr: 0 };
   let prev = null;
   const recentWindows = [];
   for (let di = 0; di < dates.length; di++) {
@@ -189,6 +232,8 @@ function buildModel(D) {
         day.cons = prevW.length ? mean(prevW.map(w => clockIoU(s, w))) : null;
       }
     }
+    const bS = baselineOf(win('shr'));
+    if (day.sleepMin != null) Object.assign(day, sleepScoreOf(day, s, { hrv: bH, shr: bS }));
     // --- recovery ---
     let wsum = 0, score = 0;
     const parts = {};
@@ -203,6 +248,7 @@ function buildModel(D) {
     if (day.rhr != null) hist.rhr.push([di, day.rhr]);
     if (day.resp != null) hist.resp.push([di, day.resp]);
     if (day.temp != null) hist.temp.push([di, day.temp]);
+    if (s && s.hrAvg != null) hist.shr.push([di, s.hrAvg]);
     if (s) { recentWindows.push({ di, ls: s.ls, le: s.le }); if (recentWindows.length > 6) recentWindows.shift(); }
     out[date] = day; prev = day;
   }

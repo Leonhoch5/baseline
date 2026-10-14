@@ -1,6 +1,9 @@
 // ---------- Model tab: what the app has learned about you, how accurate it is, and how it works ----------
 const EVID = { ev: ['Evidence-based', 'hi'], eng: ['Engineering approximation', 'mid'], exp: ['Experimental', 'lo'] };
 const REF = {
+  ohayon: ['Ohayon et al. 2017, Sleep Health (NSF sleep quality recommendations)', 'https://doi.org/10.1016/j.sleh.2016.11.006'],
+  garmin: ['Garmin: how the sleep score is calculated', 'https://www.garmin.com/en-US/blog/?p=34517'],
+  whoop: ['WHOOP sleep performance update (2025)', 'https://gadgetsandwearables.com/2025/05/05/whoop-new-sleep-score-metric/'],
   rothschild: ['Rothschild et al. 2024, Eur J Appl Physiol', 'https://doi.org/10.1007/s00421-024-05530-2'],
   miller: ['Miller, Sargent & Roach 2022, Sensors', 'https://doi.org/10.3390/s22166317'],
   nuuttila: ['Nuuttila et al. 2025, Sensors', 'https://doi.org/10.3390/s25020533'],
@@ -51,6 +54,12 @@ const METHODS = [
     how: 'SRI = 200 × (share of 5-minute slots in the same sleep/wake state 24 h apart) − 100, over the last 14 days with complete nights. Individual sleep need: a hinge regression of your morning outcome on sleep duration (plateau searched between 6 and 9.5 h), with a bootstrap interval; reported only with ≥ 30 nights, a positive slope and a narrow interval, and always kept within 7–9 h.',
     limits: 'Apple Watch overestimated total sleep by about 40 minutes and detected wake poorly (26%) against polysomnography; stage agreement was low (κ 0.20). Stages and efficiency are therefore shown as estimates only. A sleep-need estimate from observational data is an association, not proof of what you need.',
     eval: 'The sleep-need analysis reports its interval and sample size and says so when the evidence is unclear.' },
+  { id: 'sleepscore', title: 'Sleep score (0–100%)', ev: 'eng', refs: ['ohayon', 'hirsh', 'miller', 'phillips', 'garmin', 'whoop'],
+    why: 'Hours alone miss how well you slept. Like WHOOP (hours vs need, consistency, efficiency, sleep stress) and Garmin (duration, stages, disruptions, stress), the score blends quantity with quality.',
+    vars: 'Asleep vs personal sleep need, time in bed, awake minutes and wake-ups after sleep onset, deep and REM share, overlap of the sleep window with the previous 4 nights, overnight HRV and average sleeping heart rate vs your 30-day baseline.',
+    how: 'Each part is scored 0–100 with piecewise-linear curves anchored on published adult norms (efficiency ≥ 85% good; awake after sleep onset ≤ 20–30 min; deep ~15–20%, REM ~20–25% of sleep). Weights: hours vs need 40%, efficiency 15%, consistency 15%, disruptions 10%, deep & REM 10%, sleep stress 10%. Missing parts are dropped and the rest rescaled. 90+ excellent, 80–89 good, 60–79 fair, < 60 poor (Garmin’s bands).',
+    limits: 'The weights and curves are a design choice, not a validated clinical scale; WHOOP and Garmin don’t publish theirs. Apple Watch stages and wake detection are weak, which is why duration carries the most weight. Recovery still uses hours vs need, not this score, so it doesn’t count sleep HRV twice.',
+    eval: 'Can be checked against next-morning readiness once enough check-ins exist (Model tab).' },
   { id: 'predict', title: 'Predictions and how they are tested', ev: 'exp', refs: ['rothschild', 'nuuttila'],
     why: 'In endurance athletes, individual models predicted daily recovery better than simple baselines on average, but accuracy varied more than fivefold between athletes and the most useful inputs differed per person (Rothschild 2024). Responses to overload also varied widely between individuals (Nuuttila 2025).',
     vars: 'Targets: next-morning readiness (check-in), next-morning HRV deviation, next-morning resting HR deviation. Features known by the evening before: today’s value, HRV and resting HR deviation, sleep (last night and 3-night average), training load (today, 3 days, fatigue vs fitness), reported fatigue.',

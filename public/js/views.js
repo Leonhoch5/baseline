@@ -101,6 +101,7 @@ VIEWS.today = (v) => {
   const z = recoveryZone(d.rec), coach = coachFor(d, M);
   const recNote = d.rec != null ? `HRV ${d.hrv != null ? Math.round(d.hrv) + ' ms' : '–'} · RHR ${d.rhr ?? '–'}` + (d.recConf ? ` · ${d.recConf.level} confidence` : '') : d.calibrating ? 'Needs 4 nights of data' : 'Wear your Watch to sleep';
   const sleepNote = d.sleepMin != null ? `${fmtHM(d.sleepMin)} of ${fmtHM(d.need)} needed` : 'No sleep recorded';
+  const ssW = sleepScoreWord(d.sleepScore);
   const [lo, hi] = coach.target;
   const st = d.strain || 0;
   const sessionHtml = plannedListHtml(coach, M);
@@ -110,7 +111,7 @@ VIEWS.today = (v) => {
   <div class="dials">
     ${dial('rec', d.rec != null ? d.rec / 100 : 0, recColor(d.rec), d.rec != null ? d.rec + '%' : '—', d.rec != null ? REC_WORD[z].toUpperCase() : d.calibrating ? 'CALIBRATING' : 'NO SCORE', 'Recovery', esc(recNote), 'recovery')}
     ${dial('strain', st / 21, 'var(--strain)', d.strain != null ? f1(d.strain) : '—', 'OF 21', 'Strain', esc(d.acts.length ? d.acts.length + (d.acts.length > 1 ? ' activities' : ' activity') : 'No workouts'), 'strain')}
-    ${dial('sleep', d.perf || 0, 'var(--sleep)', d.perf != null ? Math.round(d.perf * 100) + '%' : '—', d.sleepMin != null ? fmtHM(d.sleepMin) + ' H' : 'NO DATA', 'Sleep', esc(sleepNote), 'sleep')}
+    ${dial('sleep', d.sleepScore != null ? d.sleepScore / 100 : 0, 'var(--sleep)', d.sleepScore != null ? d.sleepScore + '%' : '—', ssW ? ssW.toUpperCase() : 'NO DATA', 'Sleep', esc(sleepNote), 'sleep')}
   </div>
   <div class="panel coach">
     <div><div class="eyebrow">${S.date === M.today ? "Today's guidance" : 'Guidance for ' + esc(fmtDay(S.date))}</div><h2>${esc(coach.head)}</h2><p>${esc(coach.body)}</p>${sessionHtml}</div>
@@ -147,7 +148,7 @@ VIEWS.sleep = (v) => {
   const tonight = d ? sleepPlanner(d, M) : null;
   if (!sl && d && d.sleepSummary) {
     v.innerHTML = `<div class="panel"><div class="eyebrow">Night ending ${esc(fmtDay(S.date))}</div><div style="font:600 34px/1.1 var(--font-display);margin-top:6px">${fmtHM(d.sleepMin)} <span class="muted" style="font-size:18px">asleep · ${pct(d.perf)} of ${fmtHM(d.need)} needed</span></div>
-      <p class="sub" style="margin:8px 0 0">Only the total is known for this night (from your Apple Health history), so stages and bed times aren't available.</p></div>
+      <p class="sub" style="margin:8px 0 0">Only the total is known for this night (from your Apple Health history), so stages and bed times aren't available. The sleep score (${d.sleepScore ?? '–'}%) is based on duration alone.</p></div>
       <div class="panel"><div class="panel-h"><h2>Last 14 nights</h2></div><div class="legend"><span><i class="box" style="background:var(--sleep)"></i>Asleep</span><span><i style="background:var(--fg-2)"></i>Sleep need</span></div><div class="chart" id="c-14"></div></div>`;
     v.insertAdjacentHTML('beforeend', sleepCoachHtml(M, S.date)); drawSleepWindows(v, M, S.date);
     sleepBars(v.querySelector('#c-14'), last14); return;
@@ -163,9 +164,9 @@ VIEWS.sleep = (v) => {
   v.innerHTML = `
   <div class="cols">
     <div class="panel" style="display:grid;grid-template-columns:150px minmax(0,1fr);gap:20px;align-items:center">
-      <div class="dial" style="border:0;padding:0;cursor:default">${ringSvg(d.perf, 'var(--sleep)', Math.round(d.perf * 100) + '%', 'PERFORMANCE')}</div>
+      <div class="dial" style="border:0;padding:0;cursor:default">${ringSvg(d.sleepScore != null ? d.sleepScore / 100 : 0, 'var(--sleep)', d.sleepScore != null ? d.sleepScore + '%' : '—', (sleepScoreWord(d.sleepScore) || 'SLEEP SCORE').toUpperCase())}</div>
       <div style="display:grid;gap:12px;min-width:0">
-        <div><div class="eyebrow">Hours of sleep</div><div style="font:600 34px/1 var(--font-display)">${fmtHM(d.sleepMin)} <span class="muted" style="font-size:18px">/ ${fmtHM(d.need)} needed</span></div></div>
+        <div><div class="eyebrow">Hours of sleep</div><div style="font:600 34px/1 var(--font-display)">${fmtHM(d.sleepMin)} <span class="muted" style="font-size:18px">/ ${fmtHM(d.need)} needed · ${pct(d.perf)}</span></div></div>
         <div class="muted">${fmtClock(sl.ls)} → ${fmtClock(sl.le)}${d.naps.length ? ` · plus ${d.naps.length} nap${d.naps.length > 1 ? 's' : ''} (${fmtDurLong(d.a.sleep.napMin)})` : ''}</div>
       </div>
     </div>
@@ -174,6 +175,7 @@ VIEWS.sleep = (v) => {
       ${tonight ? `<p class="muted" style="margin:14px 0 0;font-size:13px">Tonight: aim for <b style="color:var(--fg)">${fmtHM(tonight.need)}</b> asleep. To wake at ${fmtClock(tonight.wake, true)}, be in bed by <b style="color:var(--fg)">${fmtClock(tonight.bed, true)}</b>.</p>` : ''}
     </div>
   </div>
+  ${sleepScoreHtml(d)}
   ${sleepCoachHtml(M, S.date)}
   <div class="panel"><div class="panel-h"><h2>Stages</h2><span class="aside">${esc(sl.src || '')}</span></div>
     <div class="legend">${stg.map(s => `<span><i class="box" style="background:${s[2]}"></i>${s[0]}</span>`).join('')}</div>
@@ -212,7 +214,7 @@ function sleepPlanner(d, M) {
 function sleepBars(el, days) {
   barChart(el, {
     label: 'Hours asleep over the last 14 nights', height: 170, color: 'var(--sleep)', fmt: t => t + 'h', yMin: 0,
-    items: days.map(x => ({ date: x.date, label: fmtDayShort(x.date), v: x.sleepMin != null ? x.sleepMin / 60 : null, tip: { head: fmtDay(x.date), rows: x.sleepMin != null ? [{ v: fmtHM(x.sleepMin) + ' h', k: 'asleep', color: 'var(--sleep)' }, { v: fmtHM(x.need) + ' h', k: 'needed' }, { v: pct(x.perf), k: 'performance' }] : [{ v: 'No sleep recorded' }] } })),
+    items: days.map(x => ({ date: x.date, label: fmtDayShort(x.date), v: x.sleepMin != null ? x.sleepMin / 60 : null, tip: { head: fmtDay(x.date), rows: x.sleepMin != null ? [{ v: fmtHM(x.sleepMin) + ' h', k: 'asleep', color: 'var(--sleep)' }, { v: fmtHM(x.need) + ' h', k: 'needed' }, { v: pct(x.perf), k: 'of need' }, { v: x.sleepScore != null ? x.sleepScore + '%' : '–', k: 'sleep score' }] : [{ v: 'No sleep recorded' }] } })),
     line: { values: days.map(x => x.need != null && x.a ? x.need / 60 : null), color: 'var(--fg-2)' },
     onClick: it => { S.date = it.date; render(); }
   });
@@ -315,7 +317,7 @@ VIEWS.trends = (v) => {
     ${stat('Resting HR', x => x.rhr, 1, 'bpm', false)}
     ${stat('Strain', x => x.strain, 1, '', null)}
     ${stat('Asleep', x => x.sleepMin, 0, 'h', true)}
-    ${stat('Sleep performance', x => x.perf != null ? x.perf * 100 : null, 0, '%', true)}
+    ${stat('Sleep score', x => x.sleepScore, 0, '%', true)}
   </div>
   <div class="panel"><div class="panel-h"><h2>Recovery</h2><span class="aside">tap a day to open it</span></div>
     <div class="legend"><span><i class="box" style="background:var(--rec-hi)"></i>67–100 green</span><span><i class="box" style="background:var(--rec-mid)"></i>34–66 yellow</span><span><i class="box" style="background:var(--rec-lo)"></i>0–33 red</span></div>
@@ -511,7 +513,7 @@ VIEWS.data = (v) => {
       <div class="row" style="margin-top:12px"><button class="btn primary" data-action="save-settings">Save settings</button><span class="muted" id="setStatus" style="font-size:12px"></span></div>
     </div>
     <div class="panel prose"><div class="panel-h"><h2>How the scores work</h2></div>
-      <p><b>Recovery</b> compares last night's heart-rate variability, lowest sleeping heart rate, respiratory rate and sleep performance with your own 30-day baseline. Green is 67–100%, yellow 34–66%, red 0–33%.</p>
+      <p><b>Recovery</b> compares last night's heart-rate variability, lowest sleeping heart rate, respiratory rate and sleep (hours vs need) with your own 30-day baseline. Green is 67–100%, yellow 34–66%, red 0–33%.</p>
       <p><b>Strain</b> is cardiovascular load on a 0–21 scale, built from time spent above 50% of max heart rate across the whole day, so effort counts the same whether it was logged as a workout or not. A workout recorded by both your Watch and Strava counts once.</p>
       <p><b>Sleep need</b> starts from your baseline and adds time after hard days and after short nights.</p>
       <p class="muted" style="font-size:12px">These are estimates for training decisions, not medical measurements.</p>
@@ -657,4 +659,26 @@ function planImportHtml() {
       <div class="row" style="margin-top:12px">${I.busy ? `<button class="btn primary" disabled>Claude is converting the plan…</button><button class="btn ghost" data-action="plan-stop">Stop</button>` : `<button class="btn primary" data-action="plan-convert">Convert with Claude</button><button class="btn ghost" data-action="plan-import-cancel">Cancel</button>`}</div>`;
   }
   return `<div class="panel" id="planImport"><div class="panel-h"><h2>Add a plan</h2>${I.preview ? '<span class="chip st-done">check and save</span>' : ''}</div>${I.error ? `<div class="notice err" style="margin-bottom:12px">${esc(I.error)}</div>` : ''}${body}</div>`;
+}
+
+function sleepScoreHtml(d) {
+  if (d.sleepScore == null) return '';
+  const P = d.sleepParts, R = d.sleepRaw || {}, keys = Object.keys(SLEEP_WEIGHTS);
+  const wSum = keys.filter(k => P[k] != null).reduce((a, k) => a + SLEEP_WEIGHTS[k], 0) || 1;
+  const detail = {
+    dur: () => `${pct(R.dur)} of need`,
+    eff: () => `${pct(R.eff)} of time in bed asleep`,
+    cont: () => `${Math.round(R.waso)} min awake · ${R.wakes} wake-up${R.wakes === 1 ? '' : 's'}`,
+    stages: () => `deep ${Math.round(R.deepPct * 100)}% · REM ${Math.round(R.remPct * 100)}%`,
+    cons: () => `${pct(R.cons)} overlap with last 4 nights`,
+    stress: () => R.stressZ >= 0 ? 'HRV & sleeping HR at or better than usual' : `HRV & sleeping HR ${Math.abs(R.stressZ).toFixed(1)} SD off usual`,
+  };
+  const missing = { eff: 'no time-in-bed data', cont: 'no sleep segments', stages: 'no stage data', cons: 'needs a few nights in a row', stress: 'needs 7 nights of HRV or sleeping HR' };
+  const color = v => v >= 80 ? 'var(--rec-hi)' : v >= 60 ? 'var(--rec-mid)' : 'var(--rec-lo)';
+  const rows = keys.map(k => P[k] != null
+    ? `<div class="stage ss"><span>${SLEEP_PART_LABEL[k]} <small class="muted">${Math.round(SLEEP_WEIGHTS[k] / wSum * 100)}%</small></span><div class="bar"><span style="width:${P[k]}%;background:${color(P[k])}"></span></div><span class="val"><b>${P[k]}</b> · ${esc(detail[k]())}</span></div>`
+    : `<div class="stage ss" style="opacity:.55"><span>${SLEEP_PART_LABEL[k]}</span><div class="bar"></div><span class="val">${esc(missing[k])}</span></div>`).join('');
+  return `<div class="panel"><div class="panel-h"><h2>Sleep score</h2><span class="aside">${d.sleepScore}% · ${esc(sleepScoreWord(d.sleepScore))}</span></div>
+    <div class="stages">${rows}</div>
+    <p class="muted" style="font-size:12px;margin:12px 0 0">Like WHOOP and Garmin, the score combines how long you slept against your need with how well you slept. The small % is each part's weight tonight; parts without data are left out. 90+ excellent · 80–89 good · 60–79 fair · below 60 poor. Apple Watch stages and wake detection are rough estimates, so they carry less weight than duration.</p></div>`;
 }
