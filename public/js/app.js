@@ -11,7 +11,7 @@ const COLLS = ['apple', 'strava', 'journal', 'planSessions', 'planWeeks', 'plans
 const S = {
   tab: 'today', date: todayYmd(), jdate: addDays(todayYmd(), -1), range: 90, actFilter: 'all', actLimit: 30, ovlLimit: 8, planAll: false,
   sample: false, sampleData: null, real: emptyData(), model: null, db: null, dbMode: 'loading', loaded: {},
-  importing: null, stravaSync: null, driveSync: null, impMonths: 12, jdraft: {}, confirmDelete: false, owner: null, guideOpen: false, planSel: null, planImport: null, planDel: null
+  importing: null, stravaSync: null, driveSync: null, impMonths: 12, jdraft: {}, confirmDelete: false, owner: null, guideOpen: false, planSel: null, planImport: null, planDel: null, testForm: null
 };
 function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } }
@@ -337,23 +337,23 @@ async function saveTests(list) {
   changed();
 }
 async function onForm(form) {
-  const f = Object.fromEntries(new FormData(form).entries()), msg = form.querySelector('#swimMsg');
+  const f = Object.fromEntries(new FormData(form).entries()), msg = form.querySelector('#testMsg');
   const say = t => { if (msg) msg.textContent = t; };
-  if (form.dataset.form === 'swim-add') {
+  if (form.dataset.form === 'test-add') {
+    const T = TEST_TYPES[f.type]; if (!T) return say('Pick a test.');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(f.date || '')) return say('Pick a date.');
-    const id = 't' + Date.now().toString(36);
-    let entry;
-    if (f.kind === 'css') {
-      const t400 = parseClock(f.t400), t200 = parseClock(f.t200);
-      if (!(t400 > 200 && t400 < 1200) || !(t200 > 90 && t200 < 600)) return say('Enter both times as m:ss, e.g. 6:35.2 and 3:14.0.');
-      if (t400 <= t200 * 1.6) return say('The 400 m time looks too fast for that 200 m time. Check both.');
-      entry = { id, date: f.date, kind: 'css', t400, t200 };
-    } else {
-      const dist = f.kind === 'tt1500' ? 1500 : 1600, sec = parseClock(f.sec);
-      if (!(sec > dist * 0.6 && sec < dist * 3)) return say('Enter the time as mm:ss, e.g. 26:40.');
-      entry = { id, date: f.date, kind: 'tt', dist, sec };
+    const values = {};
+    for (const fd of T.fields) {
+      const raw = String(f['v_' + fd.k] || '').trim();
+      if (!raw) { if (fd.opt) continue; return say('Fill in “' + fd.label + '”.'); }
+      const v = fd.kind === 'time' ? parseClock(raw) : fd.kind === 'num' ? parseFloat(raw.replace(',', '.')) : raw.slice(0, 80);
+      if (v == null || (fd.kind !== 'text' && !isFinite(v))) return say('“' + fd.label + '” isn’t a valid ' + (fd.kind === 'time' ? 'time (m:ss)' : 'number') + '.');
+      values[fd.k] = v;
     }
-    const list = ((cur().tests && cur().tests.list) || []).concat([entry]).sort((a, b) => a.date < b.date ? -1 : 1);
+    const err = T.check ? T.check(values) : null; if (err) return say(err);
+    const entry = clean({ id: 't' + Date.now().toString(36), date: f.date, type: f.type, values, sessionId: f.sessionId || null });
+    const list = ((cur().tests && cur().tests.list) || []).filter(t => !(entry.sessionId && t.sessionId === entry.sessionId)).concat([entry]).sort((a, b) => a.date < b.date ? -1 : 1);
+    S.testForm = null;
     await saveTests(list);
   } else if (form.dataset.form === 'race-set') {
     if (!f.name || !/^\d{4}-\d{2}-\d{2}$/.test(f.date || '')) return;
@@ -370,7 +370,13 @@ async function saveOverlaps(split) {
 // ---- actions ----
 const ACTIONS = {
   tab: b => setTab(b.dataset.tab),
-  'swim-del': b => saveTests(((cur().tests && cur().tests.list) || []).filter(t => t.id !== b.dataset.id)),
+  'test-del': b => saveTests(((cur().tests && cur().tests.list) || []).filter(t => t.id !== b.dataset.id)),
+  'test-open': b => {
+    const s = S.model && S.model.plan.sessions.find(x => x.id === b.dataset.session);
+    S.testForm = { type: b.dataset.type, date: b.dataset.date > M_today() ? M_today() : b.dataset.date, sessionId: b.dataset.session || null, pre: s ? sessionTestDefaults(s, b.dataset.type) : null };
+    setTab('race');
+    setTimeout(() => { const el = document.getElementById('testsPanel'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); const inp = document.querySelector('#testFields input'); if (inp) inp.focus({ preventScroll: true }); }, 60);
+  },
   day: b => { const n = addDays(S.date, +b.dataset.d); if (n <= (S.model ? S.model.today : todayYmd())) { S.date = n; render(); } },
   goto: b => { S.date = b.dataset.date === 'today' ? (S.model ? S.model.today : todayYmd()) : b.dataset.date; render(); },
   range: b => { S.range = +b.dataset.n; render(); },
@@ -578,7 +584,7 @@ function boot() {
   document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role="button"][data-action]')) { e.preventDefault(); e.target.click(); } });
   document.addEventListener('submit', e => { const f = e.target.closest('form[data-form]'); if (f) { e.preventDefault(); onForm(f); } });
   document.addEventListener('change', e => {
-    if (e.target.name === 'kind' && e.target.closest('form[data-form="swim-add"]')) { const fm = e.target.form, css = e.target.value === 'css'; fm.querySelectorAll('.f-css').forEach(x => { x.hidden = !css; }); fm.querySelectorAll('.f-tt').forEach(x => { x.hidden = css; }); }
+    if (e.target.name === 'type' && e.target.closest('#testForm')) { S.testForm = { ...(S.testForm || {}), type: e.target.value, pre: null }; const box = document.getElementById('testFields'); if (box) box.innerHTML = testFieldsHtml(e.target.value, null); }
     const I = S.planImport; if (!I) return;
     if (e.target.id === 'planFiles') { readPlanFiles([...e.target.files]); e.target.value = ''; }
     else if (e.target.id === 'planStart' && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) { I.start = e.target.value; if (I.spec) buildPreview(); rerenderImport(); }

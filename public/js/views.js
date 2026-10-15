@@ -98,7 +98,7 @@ VIEWS.today = (v) => {
     v.innerHTML = `<div class="panel coach"><div><div class="eyebrow">${S.date === M.today ? "Today's plan" : 'Plan for ' + esc(fmtDay(S.date))}</div><h2>${esc(c.head)}</h2><p>${esc(c.body)}</p>${plannedListHtml(c, M)}</div>
       <div><div class="eyebrow">Strain target</div><p class="muted" style="font-size:13px;margin:8px 0 0">${c.target[0]}–${c.target[1]} on the 0–21 scale. It narrows once your recovery score is available.</p></div></div>
       <div class="panel"><div class="panel-h"><h2>No Watch data for this day yet</h2></div><p class="sub" style="margin:0 0 12px">Heart rate, sleep and HRV arrive when the iPhone Shortcut syncs; workouts arrive from Strava.</p>
-      <div class="row"><button class="btn" data-action="drive-sync">Check iPhone data now</button><button class="btn ghost" data-action="tab" data-tab="data">Sync settings</button></div><div id="driveStatus" style="margin-top:10px">${driveStatusHtml(S.driveSync)}</div></div>` + coachPanelHtml(M, S.date);
+      <div class="row"><button class="btn" data-action="drive-sync">Check iPhone data now</button><button class="btn ghost" data-action="tab" data-tab="data">Sync settings</button></div><div id="driveStatus" style="margin-top:10px">${driveStatusHtml(S.driveSync)}</div></div>` + testDueNoticeHtml(M) + coachPanelHtml(M, S.date);
     return;
   }
   const z = recoveryZone(d.rec), coach = coachFor(d, M);
@@ -124,6 +124,7 @@ VIEWS.today = (v) => {
       <p class="muted" style="font-size:12px;margin:10px 0 0">The shaded band is the strain range that fits ${d.rec != null ? 'a ' + REC_WORD[z].toLowerCase() + ' recovery' : 'an average day'}: ${lo}–${hi}. ${st >= hi ? 'You have reached it.' : st >= lo ? 'You are in range.' : `About ${f1(lo - st)} more to reach it.`}</p>
     </div>
   </div>
+  ${testDueNoticeHtml(M)}
   ${coachPanelHtml(M, S.date)}
   ${bodySignalsHtml(M, S.date)}
   ${outlookHtml(M, true)}
@@ -443,7 +444,7 @@ VIEWS.plan = (v) => {
     const canCheck = !s.isRest && !s.match && s.date <= today;
     const doneBy = s.checked ? (s.checked.by === 'you' ? 'marked done by you' : 'reported done' + (s.checked.note ? ': ' + s.checked.note : '')) : '';
     return `<div class="ps ${s.date === today ? 'is-today' : ''}"><div class="when">${first ? `<b>${WD[parseYmd(s.date).getDay()]}</b>${esc(fmtDayShort(s.date))}` : ''}</div>
-      <div style="min-width:0"><div class="t">${esc(s.title || SPORT_LABEL[s.sportKey])}${s.target ? ` <span class="chip">${esc(s.target)}</span>` : ''}${s.optional ? ' <span class="chip">optional</span>' : ''}</div>
+      <div style="min-width:0"><div class="t">${esc(s.title || SPORT_LABEL[s.sportKey])}${s.target ? ` <span class="chip"${s.targetBase ? ` title="Adjusted to your latest CSS (plan said ${esc(s.targetBase)})"` : ''}>${esc(s.target)}${s.targetBase ? ' ↻' : ''}</span>` : ''}${s.optional ? ' <span class="chip">optional</span>' : ''}${testChipHtml(s)}</div>
         <div class="m">${[s.isRest ? null : SPORT_LABEL[s.sportKey], s.durationMin ? fmtDurLong(s.durationMin) : null, s.distance || null, s.isRest ? null : s.intensity].filter(Boolean).map(esc).join(' · ')}</div>
         ${s.details ? `<div class="m">${esc(s.details)}</div>` : ''}
         ${s.note ? `<div class="m" style="color:var(--fg-2)">${esc(s.note)}</div>` : ''}
@@ -472,9 +473,14 @@ VIEWS.plan = (v) => {
     <div class="panel"><div class="eyebrow">Today</div><h2 style="font:600 22px/1.1 var(--font-display);text-transform:uppercase;margin:6px 0">${esc(coach.head)}</h2><p class="sub" style="margin:0">${esc(coach.body)}</p>
       <div class="row" style="margin-top:12px">${todayDay && todayDay.rec != null ? `<span class="chip ${recoveryZone(todayDay.rec)}"><i></i>Recovery ${todayDay.rec}%</span>` : ''}<span class="chip">Strain target ${coach.target[0]}–${coach.target[1]}</span></div></div>
   </div>
-  ${paces.length ? `<div class="panel"><div class="panel-h"><h2>Swim paces</h2><span class="aside">${meta.css ? esc('From the CSS test on ' + fmtDay(meta.css.date) + ': ' + meta.css.pace + '/100 m') : ''}</span></div>
-    <div class="table-wrap"><table class="t guide-t"><thead><tr><th>Zone</th><th>Pace /100 m</th><th>Use</th></tr></thead><tbody>${paces.map(p => `<tr><td>${esc(p[0])}</td><td class="num">${esc(p[1])}</td><td>${esc(p[2] || '')}</td></tr>`).join('')}</tbody></table></div>
-    ${meta.paceNote ? `<p class="muted" style="font-size:12px;margin:10px 0 0">${esc(meta.paceNote)}</p>` : ''}</div>` : ''}
+  ${paces.length ? (() => {
+    const pu = M.race && M.race.paceUpdate && (!M.race.paceUpdate.planId || !sel || M.race.paceUpdate.planId === sel.id) ? M.race.paceUpdate : null;
+    const isGoal = row => pu && pu.goal && String(row[1]).includes(pu.goal);
+    const cell = row => pu && !isGoal(row) ? `${esc(scalePaceText(row[1], pu.ratio))}<div class="muted" style="font-size:11px">was ${esc(row[1])}</div>` : esc(row[1]);
+    return `<div class="panel"><div class="panel-h"><h2>Swim paces</h2><span class="aside">${pu ? esc('From your CSS test on ' + fmtDay(pu.date) + ': ' + fmtMSS(pu.to, 1) + '/100 m') : meta.css ? esc('From the CSS test on ' + fmtDay(meta.css.date) + ': ' + meta.css.pace + '/100 m') : ''}</span></div>
+    <div class="table-wrap"><table class="t guide-t"><thead><tr><th>Zone</th><th>Pace /100 m</th><th>Use</th></tr></thead><tbody>${paces.map(row => `<tr><td>${esc(row[0])}</td><td class="num">${cell(row)}</td><td>${esc(pu && !isGoal(row) ? scalePaceText(row[2] || '', pu.ratio, 20, 900) : row[2] || '')}</td></tr>`).join('')}</tbody></table></div>
+    <p class="muted" style="font-size:12px;margin:10px 0 0">${pu ? esc(`Updated automatically from your CSS test on ${fmtDayShort(pu.date)} (${fmtMSS(pu.from, 1)} → ${fmtMSS(pu.to, 1)}/100 m): every swim target after that date is scaled by the same factor (${pu.sessions} sessions, marked ↻). Goal race pace stays fixed. Log your next test in Training › Race.`) : meta.paceNote ? esc(meta.paceNote.replace(/ and send Claude[^.]*\./, '. Log the times in Training › Race and the paces update automatically.')) : ''}</p></div>`;
+  })() : ''}
   <div class="panel"><div class="panel-h"><h2>Sessions</h2><button class="btn sm" data-action="planall">${S.planAll ? 'Show current weeks' : 'Show all weeks'}</button></div>
     ${keys.map(k => { const ss = groups.get(k), wi = weekInfo[k] || {}; const pastS = ss.filter(s => !s.isRest && !s.optional && s.date < today); const dn = pastS.filter(s => s.status === 'done').length;
       const isCur = cw && wi.week === cw.week;
@@ -632,7 +638,7 @@ function shortcutGuideHtml() {
 }
 
 function plannedListHtml(coach, M) {
-  if (coach.planned.length) return `<div class="session" style="display:grid;gap:8px"><div class="eyebrow">Planned ${S.date === M.today ? 'today' : 'this day'}</div>${coach.planned.slice(0, 4).map(p => `<div class="row" style="gap:10px;flex-wrap:nowrap"><span class="ic">${sportIcon(p.sportKey)}</span><div style="min-width:0;flex:1"><div class="t">${esc(p.title)}${p.target ? ` <span class="chip">${esc(p.target)}</span>` : ''}</div><div class="muted" style="font-size:12px">${[p.durationMin ? fmtDurLong(p.durationMin) : null, p.isRest ? null : p.intensity, p.optional ? 'optional' : null].filter(Boolean).map(esc).join(' · ')}</div></div>${p.status === 'done' ? '<span class="chip st-done">done</span>' : p.status === 'partial' ? '<span class="chip st-partial">cut short</span>' : ''}</div>`).join('')}</div>`;
+  if (coach.planned.length) return `<div class="session" style="display:grid;gap:8px"><div class="eyebrow">Planned ${S.date === M.today ? 'today' : 'this day'}</div>${coach.planned.slice(0, 4).map(p => `<div class="row" style="gap:10px;flex-wrap:nowrap"><span class="ic">${sportIcon(p.sportKey)}</span><div style="min-width:0;flex:1"><div class="t">${esc(p.title)}${p.target ? ` <span class="chip"${p.targetBase ? ` title="Adjusted to your latest CSS (plan said ${esc(p.targetBase)})"` : ''}>${esc(p.target)}${p.targetBase ? ' ↻' : ''}</span>` : ''}${testChipHtml(p)}</div><div class="muted" style="font-size:12px">${[p.durationMin ? fmtDurLong(p.durationMin) : null, p.isRest ? null : p.intensity, p.optional ? 'optional' : null].filter(Boolean).map(esc).join(' · ')}</div></div>${p.status === 'done' ? '<span class="chip st-done">done</span>' : p.status === 'partial' ? '<span class="chip st-partial">cut short</span>' : ''}</div>`).join('')}</div>`;
   if (coach.rest) return `<div class="session"><div><div class="eyebrow">Planned</div><div class="t">${esc(coach.rest.title || 'Rest day')}</div></div></div>`;
   return '';
 }
@@ -688,4 +694,24 @@ function sleepScoreHtml(d) {
   return `<div class="panel"><div class="panel-h"><h2>Sleep score</h2><span class="aside">${d.sleepScore}% · ${esc(sleepScoreWord(d.sleepScore))}</span></div>
     <div class="stages">${rows}</div>
     <p class="muted" style="font-size:12px;margin:12px 0 0">Like WHOOP and Garmin, the score combines how long you slept against your need with how well you slept. The small % is each part's weight tonight; parts without data are left out. 90+ excellent · 80–89 good · 60–79 fair · below 60 poor. Apple Watch stages and wake detection are rough estimates, so they carry less weight than duration.</p></div>`;
+}
+
+// planned test sessions: show the logged result, or a button to log it
+function testChipHtml(s) {
+  if (!s || !s.testType) return '';
+  const r = s.testResult;
+  if (r) {
+    const k = Object.keys(r.derived || {}).find(x => THRESHOLDS[x]);
+    const txt = k ? THRESHOLDS[k].label + ' ' + THRESHOLDS[k].fmt(r.derived[k]) : r.derived && r.derived.swimPace ? TEST_TYPES[r.type].show(r.values) : 'result logged';
+    return ` <span class="chip st-done">${esc(txt)}</span>`;
+  }
+  const today = (S.model && S.model.today) || todayYmd();
+  if (s.date > today) return ' <span class="chip">test</span>';
+  return ` <button class="btn sm primary" style="padding:2px 9px;font-size:12px" data-action="test-open" data-type="${s.testType}" data-date="${s.date}" data-session="${esc(s.id)}">Enter result</button>`;
+}
+function testDueNoticeHtml(M) {
+  const R = M.race; if (!R || !R.sched) return '';
+  const due = R.sched.due.filter(({ s }) => daysBetween(s.date, M.today) <= 7 && s.date !== S.date);
+  if (!due.length) return '';
+  return `<div class="notice" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1 1 220px">${due.length === 1 ? `Your <b>${esc(due[0].s.title)}</b> on ${esc(fmtDayShort(due[0].s.date))} has no result yet.` : `${due.length} planned tests have no result yet.`}</span><button class="btn sm primary" data-action="test-open" data-type="${due[0].type}" data-date="${due[0].s.date}" data-session="${esc(due[0].s.id)}">Enter result</button></div>`;
 }

@@ -4,7 +4,7 @@ function formWord(rel) { return rel == null ? '–' : rel > 0.35 ? 'very fresh' 
 VIEWS.race = (v) => {
   const M = S.model; if (!M || M.empty) { v.innerHTML = emptyStateHtml(); return; }
   const R = M.race;
-  if (!R || !R.race) { v.innerHTML = raceSetHtml(null); return; }
+  if (!R || !R.race) { v.innerHTML = raceSetHtml(null) + (R ? testsPanelHtml(R) : ''); return; }
   const r = R.race, past = R.days < 0;
   // phase timeline
   const tot = R.phases.reduce((a, p) => a + p.weeks, 0) || 1;
@@ -31,6 +31,7 @@ VIEWS.race = (v) => {
     <ul class="tight"><li>Taper about 2 weeks, cutting volume by roughly 40–60%.</li><li>Keep intensity: short efforts at race pace stay in.</li><li>Keep how often you train; make sessions shorter rather than skipping them.</li><li>Sleep and easy days matter most in the final week; aim to start with “fresh” form.</li></ul>
     <p class="muted" style="font-size:12px;margin:6px 0 0">Based on the meta-analysis by Bosquet et al. 2007 (Med Sci Sports Exerc). Individual responses vary.</p></div>
   ${swimGoalHtml(R)}
+  ${testsPanelHtml(R)}
   ${r.manual ? raceSetHtml(r) : ''}`;
   drawRaceChart(v.querySelector('#c-race'), R, M);
   drawSwimChart(v.querySelector('#c-swim'), R, M);
@@ -54,8 +55,6 @@ function drawRaceChart(el, R, M) {
 function swimGoalHtml(R) {
   const s = R.swim; if (!s) return '';
   const g = s.goal, last = s.last;
-  const tests = s.tests.slice().reverse();
-  const testRows = tests.map(t => `<tr><td>${esc(fmtDayShort(t.date))}</td><td>${t.cssPace ? `CSS test (400 m ${fmtMSS(t.t400, 1)}, 200 m ${fmtMSS(t.t200, 1)})` : `${t.dist} m time trial`}</td><td>${t.cssPace ? fmtMSS(t.cssPace, 1) + '/100 m' : fmtMSS(t.sec, 1) + ` (${fmtMSS(t.pace, 1)}/100 m)`}</td><td>${esc(t.src === 'plan' ? 'trainer' : t.src === 'strava' ? 'Strava' : 'you')}</td><td>${t.src === 'you' && t.id ? `<button class="btn sm ghost" data-action="swim-del" data-id="${esc(t.id)}" aria-label="Delete test">✕</button>` : ''}</td></tr>`).join('');
   const rateTxt = s.rate != null ? `Your CSS has changed by ${s.rate <= 0 ? '−' : '+'}${Math.abs(s.rate).toFixed(1)} s/100 m per month between tests${s.projected != null ? `; at that rate you’d reach ${fmtMSS(s.projected, 1)}/100 m by race day (${fmtMSS(s.projected * g.dist / 100)} for ${g.dist} m)` : ''}.` : 'A second test will show how fast your pace is improving.';
   const trend = s.recentBest != null ? `Fastest average moving pace in a session: ${fmtMSS(s.recentBest, 1)}/100 m in the last 4 weeks${s.beforeBest != null ? ` (vs ${fmtMSS(s.beforeBest, 1)} the 4 weeks before)` : ''}. Volume ${(s.recentVol / 1000).toFixed(1)} km in ${s.recentN} swims${s.beforeVol ? ` (vs ${(s.beforeVol / 1000).toFixed(1)} km)` : ''}.` : '';
   return `<div class="panel" id="swimGoal"><div class="panel-h"><h2>Swim goal: ${g.dist} m under ${fmtMSS(g.sec)}</h2><span class="aside">needs ${fmtMSS(s.goalPace, 2)}/100 m</span></div>
@@ -64,23 +63,13 @@ function swimGoalHtml(R) {
       ${tile('Predicted ' + g.dist + ' m', s.pred != null ? fmtMSS(s.pred) : null, '', s.pred != null ? 'at CSS pace, in the pool' : '', '')}
       ${tile('Gap to goal', s.gap != null ? (s.gap > 0 ? '+' : '−') + Math.abs(s.gap).toFixed(1) : null, 's/100 m', s.gap != null ? (s.gap > 0 ? fmtMSS(s.pred - g.sec) + ' over ' + fmtMSS(g.sec) : 'goal pace reached') : '', s.gap > 0 ? 'delta-bad' : 'delta-good')}
       ${tile('Needed per month', s.needRate != null && s.gap > 0 ? Math.abs(s.needRate).toFixed(1) : null, 's/100 m', s.needRate != null && s.gap > 0 ? 'faster, steady until race day' : '', '')}
+      ${s.lastTrial ? tile('Latest ' + g.dist + ' m test', fmtMSS(s.lastTrial.at), '', (s.lastTrial.type === 'swim_broken' ? 'broken, ' : '') + fmtDayShort(s.lastTrial.date) + (s.lastTrial.at <= g.sec ? ' · under goal' : ' · ' + fmtMSS(s.lastTrial.at - g.sec) + ' to go'), s.lastTrial.at <= g.sec ? 'delta-good' : '') : ''}
     </div>
     <p class="sub" style="font-size:13px;margin:0 0 8px">${esc(rateTxt)} ${esc(trend)}</p>
     <div class="legend"><span><i class="box" style="background:var(--sleep)"></i>Average moving pace per swim</span><span><i style="background:var(--rec-mid)"></i>CSS</span><span><i style="background:var(--rec-hi)"></i>Goal pace</span></div>
     <div class="chart" id="c-swim"></div>
-    <p class="muted" style="font-size:12px;margin:6px 0 12px">CSS = 200 m ÷ (400 m time − 200 m time), roughly the pace you can hold for about 30 minutes, so it approximates ${g.dist} m race pace in the pool. Open water, a wetsuit, current and the start change the real race time. Session paces include easy work and drills, so they sit around or above CSS.${s.nextTest ? ' ' + esc(s.nextTest.replace(/ and send Claude[^.]*\./, '. Enter the times below.')) : ''}</p>
-    <details class="method"${tests.length ? '' : ' open'}><summary><b>Tests</b><span class="muted" style="font-size:12px">${tests.length} logged · Strava swims named “test” or “TT” at 200/400/1600 m are picked up automatically</span></summary>
-      ${testRows ? `<div class="table-wrap" style="margin-top:8px"><table class="t"><thead><tr><th>Date</th><th>Test</th><th>Result</th><th>From</th><th></th></tr></thead><tbody>${testRows}</tbody></table></div>` : ''}
-      <form class="swim-form" data-form="swim-add">
-        <label>Date<input type="date" name="date" value="${esc(M_today())}" max="${esc(M_today())}" required></label>
-        <label>Type<select name="kind"><option value="css">CSS test (400 m + 200 m)</option><option value="tt1600">1600 m time trial</option><option value="tt1500">1500 m time trial</option></select></label>
-        <label class="f-css">400 m time<input name="t400" placeholder="6:35.2" inputmode="decimal"></label>
-        <label class="f-css">200 m time<input name="t200" placeholder="3:14.0" inputmode="decimal"></label>
-        <label class="f-tt" hidden>Time<input name="sec" placeholder="26:40" inputmode="decimal"></label>
-        <button class="btn primary" type="submit">Add test</button>
-        <span class="muted" id="swimMsg" style="font-size:12px"></span>
-      </form>
-    </details></div>`;
+    <p class="muted" style="font-size:12px;margin:6px 0 12px">CSS = 200 m ÷ (400 m time − 200 m time), roughly the pace you can hold for about 30 minutes, so it approximates ${g.dist} m race pace in the pool. Open water, a wetsuit, current and the start change the real race time. Session paces include easy work and drills, so they sit around or above CSS.</p>
+  </div>`;
 }
 function M_today() { return (S.model && S.model.today) || todayYmd(); }
 
@@ -101,4 +90,46 @@ function raceSetHtml(r) {
   return `<div class="panel"><div class="panel-h"><h2>${r ? 'Change race' : 'Add your race'}</h2></div>
     <p class="sub" style="margin:0 0 10px">${r ? 'This race was set by hand.' : 'No race found. Import a training plan with a race date in Training › Plan, or set one here.'}</p>
     <form class="swim-form" data-form="race-set"><label>Race<input name="name" value="${esc(r ? r.name : '')}" placeholder="Heidelberg Triathlon" required></label><label>Date<input type="date" name="date" value="${esc(r ? r.date : '')}" required></label><label style="flex:2 1 260px">Goal<input name="goal" value="${esc(r ? r.goal : '')}" placeholder="1600 m swim under 25:00"></label><button class="btn primary" type="submit">Save</button></form></div>`;
+}
+
+// ---- tests & thresholds (all sports) ----
+function testTypeOptions(sel) {
+  return TEST_SPORTS.map(([sp, lab]) => `<optgroup label="${lab}">${Object.entries(TEST_TYPES).filter(([, t]) => t.sport === sp).map(([k, t]) => `<option value="${k}"${k === sel ? ' selected' : ''}>${esc(t.label)}</option>`).join('')}</optgroup>`).join('');
+}
+function testFieldsHtml(type, pre) {
+  const T = TEST_TYPES[type];
+  return T.fields.map(f => `<label>${esc(f.label)}<input name="v_${f.k}" ${f.kind === 'text' ? '' : 'inputmode="decimal"'} placeholder="${esc(f.ph || (f.def != null ? String(f.def) : ''))}" value="${esc(pre && pre[f.k] != null ? String(pre[f.k]) : f.def != null ? String(f.def) : '')}"${f.opt ? '' : ' required'}></label>`).join('');
+}
+function testsPanelHtml(R) {
+  const F = S.testForm || {}, type = F.type || 'swim_css';
+  const sessLabel = s => `${esc(s.title)} · ${esc(fmtDayShort(s.date))}`;
+  const due = (R.sched && R.sched.due) || [], next = (R.sched && R.sched.next) || [];
+  const dueHtml = due.map(({ s, type: t }) => `<div class="test-due"><div><b>${sessLabel(s)}</b><span class="muted">${esc(TEST_TYPES[t].label)} · result not logged yet</span></div><button class="btn sm primary" data-action="test-open" data-type="${t}" data-date="${s.date}" data-session="${esc(s.id)}">Enter result</button></div>`).join('');
+  const nextHtml = next.length ? `<p class="muted" style="font-size:12px;margin:8px 0 0">Coming up: ${next.map(({ s }) => sessLabel(s)).join(' · ')}</p>` : '';
+  const th = R.thresholds || {};
+  const thTiles = Object.values(th).map(t => {
+    const d = t.prev ? t.v - t.prev.v : null, good = d == null || t.better === 0 ? '' : d * t.better > 0 ? 'delta-good' : d * t.better < 0 ? 'delta-bad' : '';
+    const dTxt = d == null ? 'first test' : (d > 0 ? '+' : d < 0 ? '−' : '±') + t.delta(d) + ' vs ' + fmtDayShort(t.prev.date);
+    return tile(t.label, String(t.val(t.v)), t.tunit, `${fmtDayShort(t.date)} · ${dTxt}`, good);
+  }).join('');
+  const rows = (R.tests || []).slice().reverse().map(t => {
+    const T = TEST_TYPES[t.type], der = Object.keys(t.derived || {}).filter(k => THRESHOLDS[k]).map(k => THRESHOLDS[k].label + ' ' + THRESHOLDS[k].fmt(t.derived[k])).concat(t.derived.swimPace ? [fmtMSS(t.derived.swimPace, 1) + '/100 m'] : []);
+    return `<tr><td>${esc(fmtDayShort(t.date))} ${t.date.slice(0, 4)}</td><td>${esc(T.short)}<div class="muted" style="font-size:12px">${esc(T.show(t.values))}</div></td><td>${esc(der.join(' · ') || '–')}</td><td>${t.src === 'plan' ? 'trainer' : t.src === 'strava' ? 'Strava' : 'you'}</td><td>${t.src === 'you' && t.id ? `<button class="btn sm ghost" data-action="test-del" data-id="${esc(t.id)}" aria-label="Delete test">✕</button>` : ''}</td></tr>`;
+  }).join('');
+  const pu = R.paceUpdate;
+  return `<div class="panel" id="testsPanel"><div class="panel-h"><h2>Tests &amp; thresholds</h2><span class="aside">swim · bike · run</span></div>
+    ${dueHtml ? `<div class="test-dues">${dueHtml}</div>` : '<p class="sub" style="margin:0;font-size:13px">No test waiting for a result.</p>'}${nextHtml}
+    ${pu ? `<div class="notice" style="margin-top:12px">Swim paces in the plan after ${esc(fmtDayShort(pu.date))} are adjusted to your new CSS (${fmtMSS(pu.from, 1)} → ${fmtMSS(pu.to, 1)}/100 m): ${pu.sessions} sessions. Goal-pace targets stay at goal pace.</div>` : ''}
+    ${thTiles ? `<div class="tiles swim-tiles" style="margin-top:14px">${thTiles}</div>` : ''}
+    <form class="swim-form test-form" data-form="test-add" id="testForm">
+      <label style="flex:2 1 240px">Test<select name="type">${testTypeOptions(type)}</select></label>
+      <label>Date<input type="date" name="date" value="${esc(F.date || M_today())}" max="${esc(M_today())}" required></label>
+      <input type="hidden" name="sessionId" value="${esc(F.sessionId || '')}">
+      <div class="tf" id="testFields">${testFieldsHtml(type, F.pre)}</div>
+      <button class="btn primary" type="submit">Save result</button>
+      <span class="muted" id="testMsg" style="font-size:12px;flex-basis:100%">${F.sessionId ? 'Linked to the planned session on ' + esc(fmtDayShort(F.date)) + '.' : ''}</span>
+    </form>
+    ${rows ? `<details class="method" style="margin-top:12px"${F.type ? '' : ''}><summary><b>All results</b><span class="muted" style="font-size:12px">${R.tests.length} · Strava activities named “test” or “TT” (swim 200/400/1500/1600 m, run 5 km) are added automatically</span></summary><div class="table-wrap" style="margin-top:8px"><table class="t"><thead><tr><th>Date</th><th>Test</th><th>Gives</th><th>From</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></details>` : ''}
+    <p class="muted" style="font-size:12px;margin:10px 0 0">How results are used: CSS = (400 m − 200 m time) ÷ 2 per 100 m. FTP = 95% of 20-min power, or 75% of the best minute in a ramp test. Threshold heart rate = average of the last 20 min of a 30-min time trial (Friel). Run threshold pace = 30-min trial pace, or about 4% slower than 5 km pace (rule of thumb).</p>
+  </div>`;
 }

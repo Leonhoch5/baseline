@@ -41,9 +41,11 @@ function plannedLoadModel(M) {
 
 function raceModel(M, D) {
   if (!M || M.empty) return null;
-  const race = findRace(M, D); if (!race) return { race: null };
+  const race = findRace(M, D);
+  if (!race) { const tests = allTests(M, D, null); return { race: null, tests, sched: testSchedule(M, tests), thresholds: currentThresholds(tests) }; }
   const today = M.today, days = daysBetween(today, race.date);
   const pl = plannedLoadModel(M);
+  const tests = allTests(M, D, race), sched = testSchedule(M, tests), paceUpdate = applyPaceUpdate(M, tests, race);
   // background (non-workout) load per day: everyday movement counted in the daily load
   const bg = []; for (let k = 1; k <= 28; k++) { const d = M.day[addDays(today, -k)]; if (d && d.load != null) bg.push(Math.max(0, d.load - d.acts.reduce((a, x) => a + (x.load || 0), 0))); }
   const bgLoad = bg.length >= 7 ? median(bg) : 0;
@@ -82,7 +84,7 @@ function raceModel(M, D) {
   const weekNo = weeks.findIndex(w => { const st = w.start || (w.sessions[0] || {}).date; return st <= today && today <= addDays(st, 6); });
   return { race, days, peakStart, weeks: Math.floor(days / 7), weekNo: weekNo >= 0 ? weekNo + 1 : null, weekTotal: weeks.length, phases, curPhase, series, nowRow, raceRow, vsPlan, taper14, prior4, taperCut,
     raceForm: raceRow && raceRow.proj != null ? { tsb: raceRow.projTsb, ctl: raceRow.proj, rel: raceRow.proj > 0 ? raceRow.projTsb / raceRow.proj : null } : null,
-    planRaceCtl: raceRow ? raceRow.plan : null, pl, bgLoad, swim: swimModel(M, D, race) };
+    planRaceCtl: raceRow ? raceRow.plan : null, pl, bgLoad, tests, sched, thresholds: currentThresholds(tests), paceUpdate, swim: swimModel(M, D, race, tests) };
 }
 
 // ---- swim: critical swim speed from tests, predicted goal time, training pace trend ----
@@ -91,34 +93,13 @@ function swimGoal(race) {
   const m = g.match(/(\d{3,4})\s*m\b[^.]*?(?:under|sub|<)\s*(\d{1,2}:\d{2})/i);
   return m ? { dist: +m[1], sec: parseClock(m[2]) } : (race && /swim/i.test(g + (race.meta.name || '')) ? GOAL_SWIM : null);
 }
-function swimTests(M, D, race) {
-  const out = [];
-  const css = race && race.meta && race.meta.css;
-  if (css && css.t400 && css.t200) out.push({ date: css.date, kind: 'css', t400: parseClock(css.t400), t200: parseClock(css.t200), src: 'plan' });
-  for (const t of ((D && D.tests && D.tests.list) || [])) out.push({ ...t, src: 'you' });
-  // Strava swims named as a test / time trial with a matching distance
-  for (const a of M.acts) {
-    if (a.sport !== 'swim' || !a.distM || !/\b(test|tt|time ?trial|css)\b/i.test(a.name || '')) continue;
-    const t = a.movS || a.durS;
-    for (const dist of [200, 400, 1500, 1600]) if (Math.abs(a.distM - dist) <= dist * 0.02) out.push({ date: a.date, kind: 'tt', dist, sec: t, src: 'strava', name: a.name });
-  }
-  out.sort((a, b) => a.date < b.date ? -1 : 1);
-  // pair loose 400 + 200 time trials within 7 days into a CSS result
-  const res = [];
-  for (const t of out) {
-    if (t.kind === 'css') res.push({ ...t, cssPace: (t.t400 - t.t200) / 2 });
-    else if (t.kind === 'tt' && (t.dist === 400 || t.dist === 200)) {
-      const other = out.find(o => o !== t && o.kind === 'tt' && o.dist === (t.dist === 400 ? 200 : 400) && Math.abs(daysBetween(o.date, t.date)) <= 7);
-      if (other && t.dist === 400) { const t200 = other.sec, t400 = t.sec; if (t400 > t200) res.push({ date: t.date > other.date ? t.date : other.date, kind: 'css', t400, t200, cssPace: (t400 - t200) / 2, src: t.src }); }
-    } else if (t.kind === 'tt') res.push({ ...t, pace: t.sec / t.dist * 100 });
-  }
-  return res;
-}
-function swimModel(M, D, race) {
+function swimModel(M, D, race, all) {
   const goal = swimGoal(race); if (!goal) return null;
   const goalPace = goal.sec / goal.dist * 100;
-  const tests = swimTests(M, D, race);
+  const tests = all.filter(t => TEST_TYPES[t.type].sport === 'swim').map(t => ({ ...t, cssPace: t.derived.css, pace: t.derived.swimPace, dist: t.values.dist, sec: t.values.sec }));
   const cssTests = tests.filter(t => t.cssPace);
+  // time trials over the goal distance (continuous or broken) are the most direct progress marker
+  const goalTrials = tests.filter(t => t.pace && Math.abs((t.dist || 0) - goal.dist) <= goal.dist * 0.07).map(t => ({ ...t, at: t.pace * goal.dist / 100 }));
   const last = cssTests[cssTests.length - 1] || null;
   // CSS is roughly the pace you can hold for ~30 min, so it approximates 1500–1600 m race pace in the pool
   const pred = last ? last.cssPace * goal.dist / 100 : null;
@@ -134,6 +115,6 @@ function swimModel(M, D, race) {
   const recent = swims.filter(s => daysBetween(s.date, M.today) <= 28), before = swims.filter(s => { const k = daysBetween(s.date, M.today); return k > 28 && k <= 56; });
   const best = arr => arr.length ? Math.min(...arr.map(s => s.pace)) : null;
   const vol = arr => arr.reduce((a, s) => a + s.dist, 0);
-  return { goal, goalPace, tests, cssTests, last, pred, gap, rate, needRate, projected, swims, recentBest: best(recent), beforeBest: best(before), recentVol: vol(recent), beforeVol: vol(before), recentN: recent.length,
+  return { goal, goalPace, tests, cssTests, goalTrials, lastTrial: goalTrials[goalTrials.length - 1] || null, last, pred, gap, rate, needRate, projected, swims, recentBest: best(recent), beforeBest: best(before), recentVol: vol(recent), beforeVol: vol(before), recentN: recent.length,
     nextTest: race && race.meta && race.meta.paceNote ? race.meta.paceNote : null };
 }
