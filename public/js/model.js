@@ -299,6 +299,59 @@ function collectPlans(D) {
   for (let i = 0; i < plans.length; i++) plans[i].cutoff = plans[i + 1] ? plans[i + 1].start : null;
   return plans;
 }
+// ---- your changes to the plan: sick periods, replaced periods, single-session edits ----
+// D.planEdits = { blocks: [{ id, kind: 'sick'|'replace', start, end|null, label, type?, scope?, sessions? }],
+//                 sessions: { [sessionId]: { deleted?, date?, title?, sport?, durationMin?, intensity?, details? } },
+//                 added: [{ id, date, sport, title, durationMin, intensity, details }] }
+const SESSION_EDIT_FIELDS = ['date', 'title', 'sport', 'durationMin', 'intensity', 'details', 'distance', 'target'];
+function applyPlanEdits(raw, E, plans, weeks, today) {
+  E = E || {};
+  const blocks = (E.blocks || []).filter(b => b && /^\d{4}-\d{2}-\d{2}$/.test(b.start || '')).map(b => ({ ...b, endEff: b.end || (b.kind === 'sick' ? (today > b.start ? today : b.start) : b.start) }))
+    .sort((a, b) => a.start < b.start ? -1 : 1);
+  const inB = (b, d) => d >= b.start && d <= b.endEff;
+  const removed = [], out = [];
+  const edits = E.sessions || {};
+  // where a new session belongs: the plan and week that cover its date
+  const home = d => {
+    const p = plans.find(p => p.start && p.start <= d && d <= (p.cutoff ? addDays(p.cutoff, -1) : (p.end || d))) || plans[plans.length - 1] || null;
+    const w = p ? weeks.find(w => w.planId === p.id && w.start && w.start <= d && d <= (w.end || addDays(w.start, 6))) : null;
+    return { planId: p ? p.id : 'edits', week: w ? w.week : undefined, phase: w ? w.phase : undefined, weekStart: w ? w.start : undefined };
+  };
+  for (const s0 of raw) {
+    let s = s0;
+    const e = edits[s.id];
+    if (e) {
+      if (e.deleted) { removed.push({ ...s, removedBy: 'deleted' }); continue; }
+      const orig = {}; for (const k of SESSION_EDIT_FIELDS) if (e[k] != null && e[k] !== s[k]) { orig[k] = s[k]; }
+      s = { ...s, ...Object.fromEntries(SESSION_EDIT_FIELDS.filter(k => e[k] != null).map(k => [k, e[k]])), edited: orig };
+      if (e.date && e.date !== s0.date) Object.assign(s, home(e.date), { order: 50 });
+    }
+    const rb = blocks.find(b => b.kind === 'replace' && inB(b, s.date) && (!b.scope || b.scope === 'all' || sportOf(s.sport || s.title || '') === b.scope));
+    if (rb) { removed.push({ ...s, removedBy: rb.id }); continue; }
+    out.push(s);
+  }
+  for (const b of blocks) if (b.kind === 'replace') (b.sessions || []).forEach((x, i) => {
+    if (!x || !x.date) return;
+    const e = edits[x.id]; if (e && e.deleted) return;
+    const xx = e ? { ...x, ...Object.fromEntries(SESSION_EDIT_FIELDS.filter(k => e[k] != null).map(k => [k, e[k]])) } : x;
+    out.push({ ...home(xx.date), ...xx, blockId: b.id, blockLabel: b.label, order: 20 + i });
+  });
+  for (const x of E.added || []) if (x && x.date) {
+    const e = edits[x.id]; if (e && e.deleted) continue;
+    const xx = e ? { ...x, ...Object.fromEntries(SESSION_EDIT_FIELDS.filter(k => e[k] != null).map(k => [k, e[k]])) } : x;
+    out.push({ ...home(xx.date), ...xx, added: true, order: 40 });
+  }
+  const sick = blocks.filter(b => b.kind === 'sick');
+  for (const s of out) { const b = sick.find(b => inB(b, s.date)); if (b) s.sick = b.id; }
+  const sickOn = d => sick.find(b => inB(b, d)) || null;
+  // the most recent finished sick period (for easing back in)
+  const done = sick.filter(b => b.end && b.end < today).sort((a, b) => a.end < b.end ? 1 : -1)[0] || null;
+  const recentSick = done ? { ...done, days: daysBetween(done.start, done.end) + 1, since: daysBetween(done.end, today) } : null;
+  return { sessions: out, removed, blocks, sickOn, recentSick };
+}
+// how many days to ease back in after being sick
+function returnDays(b) { const n = daysBetween(b.start, b.end || b.endEff) + 1; return b.type === 'fever' ? clamp(n * 2, 5, 14) : b.type === 'injury' ? clamp(n, 3, 14) : clamp(n, 3, 10); }
+
 function buildPlan(D, actsByDay, today) {
   const plans = collectPlans(D);
   const raw = [], weeks = [];
@@ -312,7 +365,8 @@ function buildPlan(D, actsByDay, today) {
     for (const s of p.extra) if (!p.cutoff || s.date < p.cutoff) raw.push({ ...s, planId: p.id });
   }
   const checks = (D.planChecks && D.planChecks.done) || {};
-  const sessions = raw.filter(s => s && /^\d{4}-\d{2}-\d{2}$/.test(s.date || '')).map(s => ({ ...s, sportKey: sportOf(s.sport || s.title || ''), intensity: String(s.intensity || 'moderate').toLowerCase() }));
+  const ed = applyPlanEdits(raw, D.planEdits, plans, weeks, today);
+  const sessions = ed.sessions.filter(s => s && /^\d{4}-\d{2}-\d{2}$/.test(s.date || '')).map(s => ({ ...s, sportKey: sportOf(s.sport || s.title || ''), intensity: String(s.intensity || 'moderate').toLowerCase() }));
   sessions.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : (a.order || 0) - (b.order || 0));
   const used = new Set();
   // match non-optional sessions first, so an optional extra never takes the workout a main session needs
@@ -332,10 +386,11 @@ function buildPlan(D, actsByDay, today) {
     if (isRest) s.status = s.date < today ? 'rest' : s.date === today ? 'today' : 'upcoming';
     else if (m) { const r = s.durationMin ? (m.durS / 60) / s.durationMin : 1; s.ratio = r; s.status = r >= 0.7 || !ENDURANCE.has(s.sportKey) ? 'done' : 'partial'; }
     else if (chk) { s.status = 'done'; s.checked = chk; }
+    else if (s.sick && s.date <= today) s.status = 'sick';
     else if (s.date < today) s.status = s.optional ? 'skipped' : 'missed';
     else s.status = s.date === today ? 'today' : 'upcoming';
   }
-  const past = sessions.filter(s => !s.isRest && !s.optional && s.date < today && daysBetween(s.date, today) <= 28);
+  const past = sessions.filter(s => !s.isRest && !s.optional && s.status !== 'sick' && s.date < today && daysBetween(s.date, today) <= 28);
   const done = past.filter(s => s.status === 'done').length, partial = past.filter(s => s.status === 'partial').length;
   const curWeek = weeks.find(w => w.start <= today && (w.end || addDays(w.start, 6)) >= today) || null;
   for (const p of plans) {
@@ -346,7 +401,7 @@ function buildPlan(D, actsByDay, today) {
     p.totalWeeks = weeks.filter(w => w.planId === p.id).reduce((a, w) => Math.max(a, w.week || 0), 0);
   }
   const curPlan = plans.find(p => p.status === 'current') || plans.find(p => p.status === 'next') || plans[plans.length - 1] || null;
-  return { meta: curPlan ? curPlan.meta : null, plans, curPlan, weeks, curWeek, sessions, compliance: past.length ? (done + 0.5 * partial) / past.length : null, pastCount: past.length };
+  return { meta: curPlan ? curPlan.meta : null, plans, curPlan, weeks, curWeek, sessions, removed: ed.removed, blocks: ed.blocks, sickToday: ed.sickOn(today), recentSick: ed.recentSick, sickOn: ed.sickOn, compliance: past.length ? (done + 0.5 * partial) / past.length : null, pastCount: past.length };
 }
 
 // Day guidance that combines recovery with the planned session
@@ -358,6 +413,16 @@ function coachFor(day, model) {
   const lvlOf = s => (PLAN_INTENSITY[s.intensity] ?? 2) - (s.sportKey === 'strength' || s.sportKey === 'mobility' ? 1.5 : 0) - (s.optional ? 2 : 0);
   const P = planned.slice().sort((a, b) => lvlOf(b) - lvlOf(a))[0], lvl = P ? (PLAN_INTENSITY[P.intensity] ?? 2) : null;
   let head, body;
+  const sick = model.plan && model.plan.sickOn ? model.plan.sickOn(day && day.date) : null;
+  const rs = model.plan && model.plan.recentSick;
+  const easing = !sick && rs && day && day.date > rs.end && daysBetween(rs.end, day.date) <= returnDays(rs);
+  if (sick) {
+    head = sick.type === 'injury' ? 'Injured: protect it' : 'Sick day: rest';
+    body = sick.type === 'injury' ? 'Planned sessions are excused. Skip anything that loads the injured area; pain-free movement for the rest of the body is fine if it feels good. If it isn’t improving, have it checked.'
+      : sick.type === 'fever' ? 'Planned sessions are excused. With a fever, body aches or chest symptoms, don’t train at all. Rest, drink, sleep. Train again only once you’ve been fever-free for at least a day without medication, and see a doctor if it’s getting worse or not improving.'
+      : 'Planned sessions are excused. With symptoms only above the neck (runny nose, mild sore throat) and no fever, a short easy walk or very easy spin is fine if you feel like it; otherwise rest. If it moves to your chest or you get a fever, stop completely.';
+    return { head, body, target: [0, 4], planned, rest, sick };
+  }
   if (rec == null) {
     head = day && day.calibrating ? 'Calibrating your baseline' : 'No recovery score yet';
     body = day && day.calibrating ? 'Recovery needs at least 4 nights of heart-rate variability and resting heart rate. Keep wearing your Watch to sleep.' : 'Recovery comes from last night’s HRV and resting heart rate. Wear your Watch to sleep; once the iPhone Shortcut has synced the night, your score appears here.';
@@ -372,5 +437,6 @@ function coachFor(day, model) {
     head = 'Prioritise recovery';
     body = P ? (lvl >= 3 ? `Recovery is low for “${P.title}”. Swap it with an easier day this week, or do it as a Zone 2 session.` : `Keep “${P.title}” truly easy, or replace it with mobility.`) : 'Low recovery. Rest, sleep early, and keep any movement light.';
   }
-  return { head, body, target, planned, rest };
+  if (easing) body = `Easing back in after being ${rs.type === 'injury' ? 'injured' : 'sick'} (${rs.days} day${rs.days > 1 ? 's' : ''}): keep today easy and shorter than planned, and stop if symptoms come back. ` + body;
+  return { head, body, target: easing ? [Math.min(target[0], 6), Math.min(target[1], 11)] : target, planned, rest, easing: easing ? rs : null };
 }

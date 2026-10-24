@@ -415,3 +415,26 @@ ul.tight { margin: 0; padding-left: 18px; display: grid; gap: 3px; font-size: 13
 .test-due > div { display: grid; gap: 2px; min-width: 0; font-size: 13px; }
 .test-due .muted { font-size: 12px; }
 .test-form .tf { display: contents; }
+
+/* ---- plan changes: sick, replaced periods, edits ---- */
+.chip.st-sick { color: var(--rec-mid); }
+.chip.pe-chip { color: var(--sleep); border-color: color-mix(in srgb, var(--sleep) 45%, var(--line)); }
+.ps.gone { opacity: .45; } .ps.gone .t { text-decoration: line-through; }
+.pe-rows { display: grid; }
+.pe-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.pe-row:first-child { border-top: 0; }
+.pe-row > div:nth-child(2) { display: grid; gap: 2px; min-width: 0; } .pe-row .muted { font-size: 12px; }
+.pe-row .r { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.pe .pf { display: contents; } .pe .pf[hidden] { display: none; }
+fieldset.wd { border: 0; padding: 0; margin: 0; display: flex; gap: 4px; flex-wrap: wrap; align-items: flex-end; flex: 3 1 300px; }
+fieldset.wd legend { font-size: 12px; color: var(--fg-2); padding: 0; margin-bottom: 4px; width: 100%; }
+fieldset.wd label { display: inline-flex; flex-direction: row; align-items: center; gap: 4px; flex: none; padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--fg); font-size: 13px; cursor: pointer; }
+fieldset.wd input { width: auto; margin: 0; }
+.pe-inline { padding: 10px 12px 14px; margin: 4px 0 8px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); }
+.sick-card { border-color: var(--rec-mid); }
+@media (max-width: 640px) { .pe-row { grid-template-columns: minmax(0, 1fr) auto; } .pe-row > .chip { grid-column: 1 / -1; justify-self: start; } }
+@media (max-width: 640px) {
+  .ps { grid-template-columns: 56px minmax(0, 1fr); row-gap: 6px; }
+  .ps .r { grid-column: 2; justify-content: flex-start; }
+  .ps .r .btn { padding: 4px 10px; }
+}

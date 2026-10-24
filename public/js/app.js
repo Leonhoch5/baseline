@@ -1,5 +1,5 @@
 // ---------- app state, storage, actions ----------
-function emptyData() { return { apple: {}, strava: {}, journal: {}, planMeta: null, planSessions: [], planWeeks: [], plans: [], planChecks: {}, preds: {}, profile: {}, tests: { list: [] }, overlaps: { split: {} }, metaApple: null, metaStrava: null, metaDrive: null }; }
+function emptyData() { return { apple: {}, strava: {}, journal: {}, planMeta: null, planSessions: [], planWeeks: [], plans: [], planChecks: {}, planEdits: {}, preds: {}, profile: {}, tests: { list: [] }, overlaps: { split: {} }, metaApple: null, metaStrava: null, metaDrive: null }; }
 // five main sections; the leaf views inside them keep their own ids (used in links and the URL)
 const GROUPS = { today: ['today'], sleep: ['sleep'], training: ['strain', 'activities', 'plan', 'race'], trends: ['trends', 'recovery', 'model'], journal: ['journal'] };
 const NAV = ['today', 'sleep', 'training', 'trends', 'journal'];
@@ -11,7 +11,7 @@ const COLLS = ['apple', 'strava', 'journal', 'planSessions', 'planWeeks', 'plans
 const S = {
   tab: 'today', date: todayYmd(), jdate: addDays(todayYmd(), -1), range: 90, actFilter: 'all', actLimit: 30, ovlLimit: 8, planAll: false,
   sample: false, sampleData: null, real: emptyData(), model: null, db: null, dbMode: 'loading', loaded: {},
-  importing: null, stravaSync: null, driveSync: null, impMonths: 12, jdraft: {}, confirmDelete: false, owner: null, guideOpen: false, planSel: null, planImport: null, planDel: null, testForm: null
+  importing: null, stravaSync: null, driveSync: null, impMonths: 12, jdraft: {}, confirmDelete: false, owner: null, guideOpen: false, planSel: null, planImport: null, planDel: null, testForm: null, planEdit: null
 };
 function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } }
@@ -75,7 +75,7 @@ async function initDb() {
   sub('planWeeks', docs => { S.real.planWeeks = docs.map(d => ({ id: d.id, ...d.data() })); });
   sub('preds', docs => { const o = {}; docs.forEach(d => { o[d.id] = d.data(); }); S.real.preds = o; });
   sub('plans', docs => { S.real.plans = docs.map(d => ({ ...d.data(), id: d.id })); });
-  sub('plan', docs => { const m = docs.find(d => d.id === 'meta'), c = docs.find(d => d.id === 'checks'); S.real.planMeta = m ? m.data() : null; S.real.planChecks = c ? c.data() : {}; });
+  sub('plan', docs => { const m = docs.find(d => d.id === 'meta'), c = docs.find(d => d.id === 'checks'), ed = docs.find(d => d.id === 'edits'); S.real.planMeta = m ? m.data() : null; S.real.planChecks = c ? c.data() : {}; S.real.planEdits = ed ? ed.data() : {}; });
   sub('settings', docs => { const p = docs.find(d => d.id === 'profile'), o = docs.find(d => d.id === 'overlaps'), t = docs.find(d => d.id === 'tests'); S.real.tests = t ? t.data() : { list: [] }; S.real.profile = p ? p.data() : {}; S.real.overlaps = o ? o.data() : { split: {} }; });
   sub('meta', docs => { const a = docs.find(d => d.id === 'apple'), s = docs.find(d => d.id === 'strava'), g = docs.find(d => d.id === 'gdrive'); S.real.metaApple = a ? a.data() : null; S.real.metaStrava = s ? s.data() : null; S.real.metaDrive = g ? g.data() : null; });
   setTimeout(() => { if (S.dbMode === 'loading') { S.dbMode = 'live'; changed(); } }, 12000);
@@ -99,6 +99,7 @@ async function writeDoc(path, data) {
   else if (path === 'settings/overlaps') S.real.overlaps = data;
   else if (path === 'settings/tests') S.real.tests = data;
   else if (path === 'plan/checks') S.real.planChecks = data;
+  else if (path === 'plan/edits') S.real.planEdits = data;
   else if (coll === 'preds') S.real.preds = { ...(S.real.preds || {}), [id]: data };
   else if (coll === 'planWeeks') { S.real.planWeeks = S.real.planWeeks.filter(w => w.id !== id).concat([{ ...data, id }]); }
   else if (coll === 'plans') { S.real.plans = S.real.plans.filter(x => x.id !== id).concat([{ ...data, id }]); }
@@ -474,6 +475,7 @@ const ACTIONS = {
     } catch (e) { if (st) st.textContent = humanError(e); }
   },
 };
+Object.assign(ACTIONS, PLAN_EDIT_ACTIONS);
 // Log tomorrow's predictions once, on the day they are made, so accuracy can later be checked on genuinely unseen outcomes.
 let predLogT = null;
 function schedulePredLog() {
@@ -582,8 +584,9 @@ function boot() {
   const gear = document.getElementById('gear'); gear.innerHTML = `${icon(IC.gear)}<span>Settings</span>`; gear.addEventListener('click', () => setTab('data'));
   document.addEventListener('click', e => { const b = e.target.closest('[data-action]'); if (!b || b.disabled) return; const fn = ACTIONS[b.dataset.action]; if (fn) { e.preventDefault(); fn(b, e); } });
   document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role="button"][data-action]')) { e.preventDefault(); e.target.click(); } });
-  document.addEventListener('submit', e => { const f = e.target.closest('form[data-form]'); if (f) { e.preventDefault(); onForm(f); } });
+  document.addEventListener('submit', e => { const f = e.target.closest('form[data-form]'); if (!f) return; e.preventDefault(); if (['sick-add', 'block-add', 'sess-add', 'sess-edit'].includes(f.dataset.form)) onPlanEditForm(f); else onForm(f); });
   document.addEventListener('change', e => {
+    if (e.target.name === 'template' && e.target.closest('#blockForm')) { const fm = e.target.form, t = e.target.value, lab = fm.querySelector('input[name="label"]'); fm.querySelector('.pf').hidden = t !== 'pattern'; fm.querySelector('.tpl-text').textContent = BLOCK_TEMPLATES[t].text; if (lab && Object.values(BLOCK_TEMPLATES).some(x => x.label === lab.value)) lab.value = BLOCK_TEMPLATES[t].label; }
     if (e.target.name === 'type' && e.target.closest('#testForm')) { S.testForm = { ...(S.testForm || {}), type: e.target.value, pre: null }; const box = document.getElementById('testFields'); if (box) box.innerHTML = testFieldsHtml(e.target.value, null); }
     const I = S.planImport; if (!I) return;
     if (e.target.id === 'planFiles') { readPlanFiles([...e.target.files]); e.target.value = ''; }

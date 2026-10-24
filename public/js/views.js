@@ -95,7 +95,7 @@ VIEWS.today = (v) => {
   if (!d || (!d.a && !d.acts.length)) {
     const c = coachFor(d || { date: S.date }, M);
     if (!c.planned.length && !c.rest) { v.innerHTML = noDayData(M); return; }
-    v.innerHTML = `<div class="panel coach"><div><div class="eyebrow">${S.date === M.today ? "Today's plan" : 'Plan for ' + esc(fmtDay(S.date))}</div><h2>${esc(c.head)}</h2><p>${esc(c.body)}</p>${plannedListHtml(c, M)}</div>
+    v.innerHTML = sickTodayHtml(M) + (S.planEdit && S.planEdit.mode === 'sick' ? planEditFormHtml(M) : '') + `<div class="panel coach"><div><div class="eyebrow">${S.date === M.today ? "Today's plan" : 'Plan for ' + esc(fmtDay(S.date))}</div><h2>${esc(c.head)}</h2><p>${esc(c.body)}</p>${plannedListHtml(c, M)}${S.date === M.today && !c.sick && !S.planEdit ? '<button class="btn sm ghost" style="margin-top:10px" data-action="pe-open" data-mode="sick">Feeling sick or injured?</button>' : ''}</div>
       <div><div class="eyebrow">Strain target</div><p class="muted" style="font-size:13px;margin:8px 0 0">${c.target[0]}–${c.target[1]} on the 0–21 scale. It narrows once your recovery score is available.</p></div></div>
       <div class="panel"><div class="panel-h"><h2>No Watch data for this day yet</h2></div><p class="sub" style="margin:0 0 12px">Heart rate, sleep and HRV arrive when the iPhone Shortcut syncs; workouts arrive from Strava.</p>
       <div class="row"><button class="btn" data-action="drive-sync">Check iPhone data now</button><button class="btn ghost" data-action="tab" data-tab="data">Sync settings</button></div><div id="driveStatus" style="margin-top:10px">${driveStatusHtml(S.driveSync)}</div></div>` + testDueNoticeHtml(M) + coachPanelHtml(M, S.date);
@@ -116,8 +116,10 @@ VIEWS.today = (v) => {
     ${dial('strain', st / 21, 'var(--strain)', d.strain != null ? f1(d.strain) : '—', 'OF 21', 'Strain', esc(d.acts.length ? d.acts.length + (d.acts.length > 1 ? ' activities' : ' activity') : 'No workouts'), 'strain')}
     ${dial('sleep', d.sleepScore != null ? d.sleepScore / 100 : 0, 'var(--sleep)', d.sleepScore != null ? d.sleepScore + '%' : '—', ssW ? ssW.toUpperCase() : 'NO DATA', 'Sleep', esc(sleepNote), 'sleep')}
   </div>
+  ${sickTodayHtml(M)}
+  ${S.planEdit && S.planEdit.mode === 'sick' ? planEditFormHtml(M) : ''}
   <div class="panel coach">
-    <div><div class="eyebrow">${S.date === M.today ? "Today's guidance" : 'Guidance for ' + esc(fmtDay(S.date))}</div><h2>${esc(coach.head)}</h2><p>${esc(coach.body)}</p>${sessionHtml}</div>
+    <div><div class="eyebrow">${S.date === M.today ? "Today's guidance" : 'Guidance for ' + esc(fmtDay(S.date))}</div><h2>${esc(coach.head)}</h2><p>${esc(coach.body)}</p>${sessionHtml}${S.date === M.today && !coach.sick && !S.planEdit ? '<button class="btn sm ghost" style="margin-top:10px" data-action="pe-open" data-mode="sick">Feeling sick or injured?</button>' : ''}</div>
     <div><div class="eyebrow">Strain target</div>
       <div class="scale" aria-label="Strain ${f1(d.strain)} with target ${lo} to ${hi}"><div class="band" style="left:${lo / 21 * 100}%;width:${(hi - lo) / 21 * 100}%"></div><div class="fill" style="width:${st / 21 * 100}%"></div><div class="mark" style="left:${clamp(st / 21 * 100, 4, 96)}%">${f1(d.strain)}</div></div>
       <div class="scale-ticks"><span>0</span><span>7</span><span>14</span><span>21</span></div>
@@ -411,7 +413,7 @@ VIEWS.journal = (v) => {
   <div class="panel"><div class="panel-h"><h2>Last 7 days</h2></div><div class="row">${recent.map(dd => { const has = (M.journal || {})[dd]; return `<button class="btn sm ${dd === date ? 'primary' : ''}" data-action="jdate" data-date="${dd}">${esc(fmtDay(dd))}${has ? ' ✓' : ''}</button>`; }).join('')}</div></div>`;
 };
 
-const PLAN_STATUS = { done: 'done', partial: 'cut short', missed: 'missed', skipped: 'skipped', today: 'today', upcoming: 'planned', rest: 'rest' };
+const PLAN_STATUS = { done: 'done', partial: 'cut short', missed: 'missed', skipped: 'skipped', today: 'today', upcoming: 'planned', rest: 'rest', sick: 'sick' };
 function mondayOf(d) { return addDays(d, -((parseYmd(d).getDay() + 6) % 7)); }
 VIEWS.plan = (v) => {
   const M = S.model; const P = M ? M.plan : { sessions: [], weeks: [], plans: [] };
@@ -427,7 +429,8 @@ VIEWS.plan = (v) => {
   const pSessions = P.sessions.filter(s => s.planId === sel.id);
   const weekInfo = {}; for (const w of P.weeks || []) if (w.planId === sel.id) weekInfo['w' + w.week] = w;
   const groups = new Map();
-  for (const s of pSessions) { const key = s.week != null ? 'w' + s.week : 'm' + mondayOf(s.date); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(s); }
+  const pGone = (P.removed || []).filter(s => s.planId === sel.id).map(s => ({ ...s, gone: true }));
+  for (const s of pSessions.concat(pGone).sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : (a.gone ? 1 : 0) - (b.gone ? 1 : 0) || (a.order || 0) - (b.order || 0))) { const key = s.week != null ? 'w' + s.week : 'm' + mondayOf(s.date); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(s); }
   const cw = P.curWeek && P.curWeek.planId === sel.id ? P.curWeek : null;
   const anchor = cw ? cw.start : sel.status === 'next' ? mondayOf(sel.start) : sel.status === 'past' ? mondayOf(addDays(sel.effEnd, -14)) : mondayOf(today);
   let keys = [...groups.keys()];
@@ -444,13 +447,14 @@ VIEWS.plan = (v) => {
     const canCheck = !s.isRest && !s.match && s.date <= today;
     const doneBy = s.checked ? (s.checked.by === 'you' ? 'marked done by you' : 'reported done' + (s.checked.note ? ': ' + s.checked.note : '')) : '';
     return `<div class="ps ${s.date === today ? 'is-today' : ''}"><div class="when">${first ? `<b>${WD[parseYmd(s.date).getDay()]}</b>${esc(fmtDayShort(s.date))}` : ''}</div>
-      <div style="min-width:0"><div class="t">${esc(s.title || SPORT_LABEL[s.sportKey])}${s.target ? ` <span class="chip"${s.targetBase ? ` title="Adjusted to your latest CSS (plan said ${esc(s.targetBase)})"` : ''}>${esc(s.target)}${s.targetBase ? ' ↻' : ''}</span>` : ''}${s.optional ? ' <span class="chip">optional</span>' : ''}${testChipHtml(s)}</div>
+      <div style="min-width:0"><div class="t">${esc(s.title || SPORT_LABEL[s.sportKey])}${s.target ? ` <span class="chip"${s.targetBase ? ` title="Adjusted to your latest CSS (plan said ${esc(s.targetBase)})"` : ''}>${esc(s.target)}${s.targetBase ? ' ↻' : ''}</span>` : ''}${s.optional ? ' <span class="chip">optional</span>' : ''}${testChipHtml(s)}${sessBadgesHtml(s)}</div>
         <div class="m">${[s.isRest ? null : SPORT_LABEL[s.sportKey], s.durationMin ? fmtDurLong(s.durationMin) : null, s.distance || null, s.isRest ? null : s.intensity].filter(Boolean).map(esc).join(' · ')}</div>
         ${s.details ? `<div class="m">${esc(s.details)}</div>` : ''}
         ${s.note ? `<div class="m" style="color:var(--fg-2)">${esc(s.note)}</div>` : ''}
         ${s.match ? `<div class="m" style="margin-top:2px;color:var(--fg-2)">Done: ${esc(s.match.name)} · ${fmtDurLong(s.match.durS / 60)}${s.match.distM ? ' · ' + esc(s.sportKey === 'swim' ? s.match.distM + ' m' : fmtKm(s.match.distM)) : ''}${s.match.strain != null ? ' · strain ' + f1(s.match.strain) : ''}</div>` : doneBy ? `<div class="m" style="margin-top:2px;color:var(--fg-2)">${esc(doneBy)}</div>` : ''}</div>
-      <div class="r"><span class="chip st-${s.status}">${PLAN_STATUS[s.status] || s.status}</span>${canCheck ? `<button class="btn sm ghost" data-action="plan-check" data-id="${esc(s.id)}">${s.checked ? 'Undo' : 'Mark done'}</button>` : ''}</div></div>`;
+      <div class="r"><span class="chip st-${s.status}">${PLAN_STATUS[s.status] || s.status}</span>${canCheck && s.status !== 'sick' ? `<button class="btn sm ghost" data-action="plan-check" data-id="${esc(s.id)}">${s.checked ? 'Undo' : 'Mark done'}</button>` : ''}${s.match ? '' : `<button class="btn sm ghost" data-action="pe-open" data-mode="edit" data-id="${esc(s.id)}" aria-label="Edit session">Edit</button>`}</div></div>${sessEditHtml(s)}`;
   };
+  const goneRow = (s, first) => `<div class="ps gone"><div class="when">${first ? `<b>${WD[parseYmd(s.date).getDay()]}</b>${esc(fmtDayShort(s.date))}` : ''}</div><div style="min-width:0"><div class="t">${esc(s.title || SPORT_LABEL[sportOf(s.sport || '')] || 'Session')}</div><div class="m">${s.removedBy === 'deleted' ? 'removed by you' : 'set aside: ' + esc(((P.blocks || []).find(b => b.id === s.removedBy) || {}).label || 'replaced')}</div></div><div class="r"></div></div>`;
   const paces = Array.isArray(meta.paces) ? meta.paces : [];
   const later = P.plans.find(p => p.start > sel.start);
   const delHtml = sel.id === 'main' ? '' : S.planDel === sel.id ? `<div class="row" style="margin-top:12px"><span>Delete this plan and all its sessions?</span><button class="btn danger sm" data-action="plan-del-yes" data-id="${esc(sel.id)}">Delete plan</button><button class="btn ghost sm" data-action="plan-del-no">Cancel</button><span class="muted" id="planDelStatus" style="font-size:12px"></span></div>` : `<button class="btn ghost sm" style="margin-top:10px" data-action="plan-del-ask" data-id="${esc(sel.id)}">Delete plan</button>`;
@@ -481,13 +485,15 @@ VIEWS.plan = (v) => {
     <div class="table-wrap"><table class="t guide-t"><thead><tr><th>Zone</th><th>Pace /100 m</th><th>Use</th></tr></thead><tbody>${paces.map(row => `<tr><td>${esc(row[0])}</td><td class="num">${cell(row)}</td><td>${esc(pu && !isGoal(row) ? scalePaceText(row[2] || '', pu.ratio, 20, 900) : row[2] || '')}</td></tr>`).join('')}</tbody></table></div>
     <p class="muted" style="font-size:12px;margin:10px 0 0">${pu ? esc(`Updated automatically from your CSS test on ${fmtDayShort(pu.date)} (${fmtMSS(pu.from, 1)} → ${fmtMSS(pu.to, 1)}/100 m): every swim target after that date is scaled by the same factor (${pu.sessions} sessions, marked ↻). Goal race pace stays fixed. Log your next test in Training › Race.`) : meta.paceNote ? esc(meta.paceNote.replace(/ and send Claude[^.]*\./, '. Log the times in Training › Race and the paces update automatically.')) : ''}</p></div>`;
   })() : ''}
-  <div class="panel"><div class="panel-h"><h2>Sessions</h2><button class="btn sm" data-action="planall">${S.planAll ? 'Show current weeks' : 'Show all weeks'}</button></div>
+  ${S.planEdit && S.planEdit.mode !== 'edit' ? planEditFormHtml(M) : ''}
+  ${planChangesHtml(M)}
+  <div class="panel"><div class="panel-h"><h2>Sessions</h2><div class="row" style="gap:6px"><button class="btn sm" data-action="pe-open" data-mode="sick">Call in sick</button><button class="btn sm" data-action="pe-open" data-mode="replace">Replace a period</button><button class="btn sm" data-action="pe-open" data-mode="add">Add session</button><button class="btn sm ghost" data-action="planall">${S.planAll ? 'Show current weeks' : 'Show all weeks'}</button></div></div>
     ${keys.map(k => { const ss = groups.get(k), wi = weekInfo[k] || {}; const pastS = ss.filter(s => !s.isRest && !s.optional && s.date < today); const dn = pastS.filter(s => s.status === 'done').length;
       const isCur = cw && wi.week === cw.week;
       let lastDate = null;
       return `<div class="week"><div class="week-h"><b>${wi.week != null ? (wi.week === 0 ? 'Pre-block' : 'Week ' + wi.week) : 'Week of ' + esc(fmtDayShort(k.slice(1)))}</b>${wi.phase ? `<span class="muted" style="font-size:12px">${esc(wi.phase)}</span>` : ''}${isCur ? '<span class="chip st-today">this week</span>' : ''}${wi.deload ? '<span class="chip">lighter week</span>' : ''}<span class="muted" style="font-size:12px">${esc(fmtDayShort(ss[0].date))} – ${esc(fmtDayShort(ss[ss.length - 1].date))} · ${fmtHM(ss.filter(s => !s.optional).reduce((a, s) => a + (s.durationMin || 0), 0))} planned${pastS.length ? ` · ${dn}/${pastS.length} done` : ''}</span></div>
         ${wi.focus ? `<div class="muted" style="font-size:12px;margin:-2px 0 6px">${esc(wi.focus)}</div>` : ''}
-        ${ss.map(s => { const first = s.date !== lastDate; lastDate = s.date; return sessionRow(s, first); }).join('')}</div>`; }).join('') || '<p class="muted">No sessions in these weeks.</p>'}
+        ${ss.map(s => { const first = s.date !== lastDate; lastDate = s.date; return s.gone ? goneRow(s, first) : sessionRow(s, first); }).join('')}</div>`; }).join('') || '<p class="muted">No sessions in these weeks.</p>'}
   </div>`;
 };
 
@@ -638,7 +644,7 @@ function shortcutGuideHtml() {
 }
 
 function plannedListHtml(coach, M) {
-  if (coach.planned.length) return `<div class="session" style="display:grid;gap:8px"><div class="eyebrow">Planned ${S.date === M.today ? 'today' : 'this day'}</div>${coach.planned.slice(0, 4).map(p => `<div class="row" style="gap:10px;flex-wrap:nowrap"><span class="ic">${sportIcon(p.sportKey)}</span><div style="min-width:0;flex:1"><div class="t">${esc(p.title)}${p.target ? ` <span class="chip"${p.targetBase ? ` title="Adjusted to your latest CSS (plan said ${esc(p.targetBase)})"` : ''}>${esc(p.target)}${p.targetBase ? ' ↻' : ''}</span>` : ''}${testChipHtml(p)}</div><div class="muted" style="font-size:12px">${[p.durationMin ? fmtDurLong(p.durationMin) : null, p.isRest ? null : p.intensity, p.optional ? 'optional' : null].filter(Boolean).map(esc).join(' · ')}</div></div>${p.status === 'done' ? '<span class="chip st-done">done</span>' : p.status === 'partial' ? '<span class="chip st-partial">cut short</span>' : ''}</div>`).join('')}</div>`;
+  if (coach.planned.length) return `<div class="session" style="display:grid;gap:8px"><div class="eyebrow">Planned ${S.date === M.today ? 'today' : 'this day'}</div>${coach.planned.slice(0, 4).map(p => `<div class="row" style="gap:10px;flex-wrap:nowrap"><span class="ic">${sportIcon(p.sportKey)}</span><div style="min-width:0;flex:1"><div class="t">${esc(p.title)}${sessBadgesHtml(p)}${p.target ? ` <span class="chip"${p.targetBase ? ` title="Adjusted to your latest CSS (plan said ${esc(p.targetBase)})"` : ''}>${esc(p.target)}${p.targetBase ? ' ↻' : ''}</span>` : ''}${testChipHtml(p)}</div><div class="muted" style="font-size:12px">${[p.durationMin ? fmtDurLong(p.durationMin) : null, p.isRest ? null : p.intensity, p.optional ? 'optional' : null].filter(Boolean).map(esc).join(' · ')}</div></div>${p.status === 'done' ? '<span class="chip st-done">done</span>' : p.status === 'partial' ? '<span class="chip st-partial">cut short</span>' : p.status === 'sick' ? '<span class="chip st-sick">excused</span>' : ''}</div>`).join('')}</div>`;
   if (coach.rest) return `<div class="session"><div><div class="eyebrow">Planned</div><div class="t">${esc(coach.rest.title || 'Rest day')}</div></div></div>`;
   return '';
 }

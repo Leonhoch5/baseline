@@ -66,12 +66,12 @@ async function upsert(uid, rows) {
 
 // same shape the browser app builds from its collections (app.js initDb)
 export function docsToData(rows) {
-  const D = { apple: {}, strava: {}, journal: {}, planMeta: null, planSessions: [], planWeeks: [], plans: [], planChecks: {}, preds: {}, profile: {}, tests: { list: [] }, overlaps: { split: {} }, metaApple: null, metaStrava: null, metaDrive: null };
+  const D = { apple: {}, strava: {}, journal: {}, planMeta: null, planSessions: [], planWeeks: [], plans: [], planChecks: {}, planEdits: {}, preds: {}, profile: {}, tests: { list: [] }, overlaps: { split: {} }, metaApple: null, metaStrava: null, metaDrive: null };
   for (const { coll, id, data } of rows) {
     if (coll === 'apple' || coll === 'strava' || coll === 'journal' || coll === 'preds') D[coll][id] = data;
     else if (coll === 'planSessions' || coll === 'planWeeks') D[coll].push({ id, ...data });
     else if (coll === 'plans') D.plans.push({ ...data, id });
-    else if (coll === 'plan') { if (id === 'meta') D.planMeta = data; if (id === 'checks') D.planChecks = data; }
+    else if (coll === 'plan') { if (id === 'meta') D.planMeta = data; if (id === 'checks') D.planChecks = data; if (id === 'edits') D.planEdits = data; }
     else if (coll === 'settings') { if (id === 'profile') D.profile = data; if (id === 'overlaps') D.overlaps = data; if (id === 'tests') D.tests = data; }
     else if (coll === 'meta') { if (id === 'apple') D.metaApple = data; if (id === 'strava') D.metaStrava = data; if (id === 'gdrive') D.metaDrive = data; }
   }

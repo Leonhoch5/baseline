@@ -240,7 +240,7 @@ function bodySignals(M, date) {
     if (p && p.cal) { const po = BODY_SIG.filter(s => { const c = p.cal[s.key]; return c && c.z != null && c.z * s.dir >= 1.5; }).length; if (po >= 2) streak = 2; }
   }
   const J = M.journal || {}, prevJ = J[addDays(date, -1)] || {}, todayJ = J[date] || {};
-  return { level, rows, have: have.length, off: off.length, edge: edge.length, streak, sick: !!(todayJ.sick || prevJ.sick), alcohol: !!prevJ.alcohol, hardDay: (M.day[addDays(date, -1)] || {}).strain >= 16 };
+  return { level, rows, have: have.length, off: off.length, edge: edge.length, streak, sick: !!(todayJ.sick || prevJ.sick || (M.plan && M.plan.sickOn && M.plan.sickOn(date))), alcohol: !!prevJ.alcohol, hardDay: (M.day[addDays(date, -1)] || {}).strain >= 16 };
 }
 
 // ---- short morning summary (iPhone notification after the Shortcut syncs; standalone /api/ingest) ----

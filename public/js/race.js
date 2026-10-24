@@ -50,7 +50,7 @@ function raceModel(M, D) {
   const bg = []; for (let k = 1; k <= 28; k++) { const d = M.day[addDays(today, -k)]; if (d && d.load != null) bg.push(Math.max(0, d.load - d.acts.reduce((a, x) => a + (x.load || 0), 0))); }
   const bgLoad = bg.length >= 7 ? median(bg) : 0;
   const plannedByDay = {};
-  for (const s of M.plan.sessions) if (!race.planId || s.planId === race.planId) plannedByDay[s.date] = (plannedByDay[s.date] || 0) + pl.est(s);
+  for (const s of M.plan.sessions) if ((!race.planId || s.planId === race.planId) && s.status !== 'sick') plannedByDay[s.date] = (plannedByDay[s.date] || 0) + pl.est(s);
   const kC = 1 - Math.exp(-1 / 42), kA = 1 - Math.exp(-1 / 7);
   // planned curve from the plan's start (seeded with the actual fitness on that day); projection from today
   const planStart = (M.plan.plans.find(p => p.id === race.planId) || {}).start || today;

@@ -127,7 +127,7 @@ function testSchedule(M, tests) {
     const sport = TEST_TYPES[type].sport;
     const res = bySession[s.id] || tests.find(t => t.date === s.date && TEST_TYPES[t.type].sport === sport && !t.sessionId) || null;
     s.testType = type; s.testResult = res;
-    if (res) continue;
+    if (res || s.status === 'sick') continue;
     const k = daysBetween(s.date, today);
     if (k >= 0 && k <= 21) due.push({ s, type });
     else if (k < 0 && k >= -21) next.push({ s, type });
