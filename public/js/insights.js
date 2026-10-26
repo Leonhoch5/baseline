@@ -123,7 +123,8 @@ function sleepCoach(M, date, n) {
   const r = {
     n: nights.length, detailed: detailed.length,
     avgAsleep: mean(nights.map(x => x.sleepMin)), avgNeed: mean(nights.map(x => x.need)),
-    debt: nights.reduce((a, x) => a + Math.max(0, x.need - x.sleepMin), 0),
+    debt: (nights[nights.length - 1].debt14 != null ? nights[nights.length - 1].debt14 : nights.reduce((a, x) => a + Math.max(0, x.need - x.sleepMin), 0)),
+    debtRaw: nights.reduce((a, x) => a + Math.max(0, x.need - x.sleepMin), 0),
     avgPerf: mean(nights.map(x => x.perf)),
     bed: bedM, wake: wakeM, bedSd: circSdMin(beds, bedM), wakeSd: circSdMin(wakes, wakeM),
     cons: detailed.filter(x => x.cons != null).length ? mean(detailed.filter(x => x.cons != null).map(x => x.cons)) : null,
@@ -137,14 +138,18 @@ function sleepCoach(M, date, n) {
   for (let k = 0; k < 90; k++) { const x = dayAt(M, date, -k); if (!x || x.rec == null || x.perf == null) continue; (x.perf >= 0.9 ? good : x.perf < 0.8 ? short : []).push(x.rec); }
   if (good.length >= 3 && short.length >= 3) r.recGap = { good: mean(good), short: mean(short), n: good.length + short.length };
   const tips = [];
-  if (r.debt > 180) tips.push({ tone: 'bad', t: `You are ${fmtHM(r.debt)} h short of your sleep need over the last ${r.n} nights. Pay it back over several nights by going to bed 30–45 minutes earlier, rather than sleeping in.` });
-  else if (r.debt > 60) tips.push({ tone: 'warn', t: `A small sleep debt of ${fmtHM(r.debt)} h this week. One earlier night would clear most of it.` });
+  if (r.debt > 180) tips.push({ tone: 'bad', t: `Sleep debt of ${fmtHM(r.debt)} h over the last two weeks. Pay it back over several nights by going to bed 30–45 minutes earlier; one long lie-in repays at most 1½ h.` });
+  else if (r.debt > 60) tips.push({ tone: 'warn', t: `A small sleep debt of ${fmtHM(r.debt)} h. One earlier night would clear most of it.` });
   else tips.push({ tone: 'good', t: `You met your sleep need on average this week (${fmtHM(r.avgAsleep)} asleep vs ${fmtHM(r.avgNeed)} needed).` });
   if (r.bedSd != null && r.bedSd > 45) tips.push({ tone: 'warn', t: `Your bedtime varied by about ±${Math.round(r.bedSd)} minutes. A steady bedtime (within ±30 min) improves sleep quality and HRV.` });
   else if (r.bedSd != null) tips.push({ tone: 'good', t: `Consistent bedtime: about ${fmtClock(r.bed, true)}, varying by ±${Math.round(r.bedSd)} minutes.` });
   if (r.restor != null && r.restor < 0.35) tips.push({ tone: 'warn', t: `Restorative sleep (deep + REM) was ${Math.round(r.restor * 100)}% of the night; 40–50% is typical. Late meals, alcohol and evening hard sessions reduce it.` });
   if (r.eff != null && r.eff < 0.85) tips.push({ tone: 'warn', t: `Sleep efficiency was ${Math.round(r.eff * 100)}%: a lot of time in bed awake. Go to bed only when sleepy, and keep the phone out of bed.` });
   if (r.recGap && r.recGap.good - r.recGap.short >= 5) tips.push({ tone: 'neutral', t: `When you sleep at least 90% of your need, your next-day recovery averages ${Math.round(r.recGap.good)}%, compared with ${Math.round(r.recGap.short)}% after short nights.` });
+  // social jet lag: sleep midpoint on free days vs work days (Wittmann 2006); > 1 h is associated with worse sleep and metabolic health
+  const mids = { wd: [], we: [] };
+  for (let k = 0; k < 14; k++) { const x = dayAt(M, date, -k); if (!x || !x.sleep) continue; const wd = parseYmd(x.date).getDay(); (wd === 0 || wd === 6 ? mids.we : mids.wd).push((minOfDayLms((x.sleep.ls + x.sleep.le) / 2) - 720 + 1440) % 1440); }
+  if (mids.wd.length >= 4 && mids.we.length >= 2) { r.jetlag = Math.round(mean(mids.we) - mean(mids.wd)); if (Math.abs(r.jetlag) >= 60) tips.push({ tone: 'warn', t: `Social jet lag: your sleep midpoint is ${Math.abs(r.jetlag)} min ${r.jetlag > 0 ? 'later' : 'earlier'} on weekends than on weekdays. Keep the shift under an hour; the Monday-morning lag is real.` }); }
   r.tips = tips;
   return r;
 }

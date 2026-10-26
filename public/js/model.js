@@ -102,15 +102,15 @@ function pw(x, pts) { // piecewise-linear through [[x, y], …] (x ascending), c
 function sleepScoreOf(day, s, base) {
   const parts = {}, raw = {};
   // 1. hours vs need (WHOOP "hours vs needed", Garmin "duration")
-  raw.dur = day.perf; parts.dur = pw(day.perf, [[0.5, 0], [0.7, 40], [0.85, 75], [0.95, 92], [1, 100]]);
+  raw.dur = day.perf; parts.dur = pw(day.perf, [[0.5, 0], [0.7, 30], [0.85, 62], [0.92, 82], [1, 100]]);   // 85% of need is a clearly short night
   if (s) {
     const asleep = s.asleep || 0;
     // 2. efficiency: asleep / in bed (85 % is the usual clinical threshold for good efficiency)
-    if (s.inBed && s.inBed >= asleep && s.inBed > 60) { raw.eff = asleep / s.inBed; parts.eff = pw(raw.eff, [[0.65, 0], [0.75, 40], [0.85, 75], [0.93, 100]]); }
+    if (s.inBed && s.inBed >= asleep && s.inBed > 60) { raw.eff = asleep / s.inBed; parts.eff = pw(raw.eff, [[0.65, 0], [0.75, 30], [0.85, 62], [0.90, 82], [0.95, 100]]); }
     // 3. disruptions: minutes awake after falling asleep, and number of awakenings
     if (s.awake != null && s.segs && s.segs.length) {
       raw.waso = s.awake; raw.wakes = s.wake || 0;
-      const w = pw(s.awake, [[10, 100], [30, 75], [60, 40], [90, 0]]), n = pw(raw.wakes, [[2, 100], [5, 70], [10, 20], [14, 0]]);
+      const w = pw(s.awake, [[8, 100], [20, 80], [40, 50], [60, 25], [90, 0]]), n = pw(raw.wakes, [[1, 100], [3, 80], [6, 45], [10, 10], [14, 0]]);
       parts.cont = 0.6 * w + 0.4 * n;
     }
     // 4. deep + REM share of sleep (adult norms: deep ~13–23 %, REM ~20–25 %; Apple Watch reports less deep sleep than lab studies, so the deep curve is set lower)
@@ -119,12 +119,12 @@ function sleepScoreOf(day, s, base) {
       parts.stages = 0.5 * pw(raw.deepPct, [[0.04, 0], [0.08, 50], [0.13, 100]]) + 0.5 * pw(raw.remPct, [[0.08, 0], [0.14, 55], [0.20, 100]]);
     }
     // 5. consistency: overlap of tonight's sleep window with the previous 4 nights (WHOOP uses a 4-day window)
-    if (day.cons != null) { raw.cons = day.cons; parts.cons = pw(day.cons, [[0.35, 0], [0.55, 40], [0.70, 75], [0.85, 100]]); }
+    if (day.cons != null) { raw.cons = day.cons; parts.cons = pw(day.cons, [[0.35, 0], [0.55, 35], [0.70, 65], [0.80, 85], [0.90, 100]]); }
     // 6. sleep stress: overnight HRV and sleeping heart rate against your own 30-day baseline
     const zs = [];
     if (s.hrv != null && base.hrv && base.hrv.n >= 7) zs.push(clamp((Math.log(s.hrv) - base.hrv.m) / Math.max(base.hrv.sd, 0.08), -3, 3));
     if (s.hrAvg != null && base.shr && base.shr.n >= 7) zs.push(-clamp((s.hrAvg - base.shr.m) / Math.max(base.shr.sd, 1.5), -3, 3));
-    if (zs.length) { raw.stressZ = mean(zs); parts.stress = pw(raw.stressZ, [[-2, 0], [-1, 45], [0, 85], [0.5, 100]]); }
+    if (zs.length) { raw.stressZ = mean(zs); parts.stress = pw(raw.stressZ, [[-2, 0], [-1, 40], [-0.3, 70], [0.3, 90], [0.8, 100]]); }
   }
   let w = 0, sum = 0;
   for (const k in parts) { parts[k] = Math.round(clamp(parts[k], 0, 100)); sum += SLEEP_WEIGHTS[k] * parts[k]; w += SLEEP_WEIGHTS[k]; }
@@ -176,6 +176,7 @@ function buildModel(D) {
   const ptr = { hrv: 0, rhr: 0, resp: 0, temp: 0, shr: 0 };
   let prev = null;
   const recentWindows = [];
+  let sleepDebt = 0, lastSleepDay = null;   // 14-night sleep debt (minutes), see sleep need below
   for (let di = 0; di < dates.length; di++) {
     const date = dates[di];
     const a = days[date] || null;
@@ -219,13 +220,18 @@ function buildModel(D) {
     const p = prev && daysBetween(prev.date, date) === 1 ? prev : null;
     // need = personal baseline + extra for yesterday's strain + a share of the previous night's shortfall
     const strainAdj = p && p.strain != null ? Math.max(0, p.strain - 10) * 3 : 0;
-    const debtCarry = p && p.debt ? Math.min(60, p.debt * 0.35) : 0;
+    // debt carry: a quarter of what you are behind over the last two weeks, at most an hour extra tonight
+    if (lastSleepDay && daysBetween(lastSleepDay, date) > 3) sleepDebt = 0;
+    const debtCarry = lastSleepDay ? Math.min(60, Math.round(sleepDebt * 0.25)) : 0;
     day.need = needBase + strainAdj + debtCarry; day.needParts = { base: needBase, strain: strainAdj, debt: debtCarry };
     if (!s && a && a.sleep && a.sleep.asleep && !a.sleep.ls) day.sleepSummary = a.sleep;
     if (s || day.naps.length || day.sleepSummary) {
       day.sleepMin = (s ? s.asleep : day.sleepSummary ? day.sleepSummary.asleep : 0) + (a.sleep.napMin || 0);
       day.perf = Math.min(1, day.sleepMin / day.need);
       day.debt = Math.max(0, needBase + strainAdj - day.sleepMin);
+      // running balance: last night's shortfall is added, a surplus repays, and 15% of the balance is forgotten each night
+      // a long night repays at most 90 minutes of debt: sleep can't be banked in one go
+      sleepDebt = clamp(0.85 * sleepDebt + Math.max(-90, needBase + strainAdj - day.sleepMin), 0, 15 * 60); lastSleepDay = date;
       if (s) {
         day.eff = s.inBed ? s.asleep / s.inBed : null;
         const prevW = recentWindows.filter(w => di - w.di <= 4);
@@ -234,6 +240,7 @@ function buildModel(D) {
     }
     const bS = baselineOf(win('shr'));
     if (day.sleepMin != null) Object.assign(day, sleepScoreOf(day, s, { hrv: bH, shr: bS }));
+    day.debt14 = lastSleepDay && daysBetween(lastSleepDay, date) <= 3 ? Math.round(sleepDebt) : null;
     // --- recovery ---
     let wsum = 0, score = 0;
     const parts = {};
@@ -406,7 +413,13 @@ function buildPlan(D, actsByDay, today) {
 
 // Day guidance that combines recovery with the planned session
 function coachFor(day, model) {
-  const rec = day ? day.rec : null, z = recoveryZone(rec);
+  // the morning check-in counts as much as the physiology (Saw 2016): feeling bad downgrades the day's guidance one step
+  const j = day && model.journal ? model.journal[day.date] : null;
+  const feelBad = j && ((j.readiness != null && j.readiness <= 4) || (j.fatigue != null && j.fatigue >= 4) || (j.soreness != null && j.soreness >= 4));
+  const feelGood = j && j.readiness != null && j.readiness >= 8 && !(j.fatigue >= 3);
+  const rec0 = day ? day.rec : null;
+  const rec = rec0 != null && feelBad ? Math.min(rec0, recoveryZone(rec0) === 'hi' ? 60 : 30) : rec0 == null && feelBad ? 25 : rec0;
+  const z = recoveryZone(rec);
   const target = strainTarget(rec);
   const planned = model.plan.sessions.filter(s => s.date === (day && day.date) && !s.isRest);
   const rest = model.plan.sessions.find(s => s.date === (day && day.date) && s.isRest);
@@ -438,5 +451,7 @@ function coachFor(day, model) {
     body = P ? (lvl >= 3 ? `Recovery is low for “${P.title}”. Swap it with an easier day this week, or do it as a Zone 2 session.` : `Keep “${P.title}” truly easy, or replace it with mobility.`) : 'Low recovery. Rest, sleep early, and keep any movement light.';
   }
   if (easing) body = `Easing back in after being ${rs.type === 'injury' ? 'injured' : 'sick'} (${rs.days} day${rs.days > 1 ? 's' : ''}): keep today easy and shorter than planned, and stop if symptoms come back. ` + body;
-  return { head, body, target: easing ? [Math.min(target[0], 6), Math.min(target[1], 11)] : target, planned, rest, easing: easing ? rs : null };
+  if (feelBad) body = `You rated this morning ${j.readiness != null ? 'readiness ' + j.readiness + '/10' : ''}${j.fatigue >= 4 ? (j.readiness != null ? ', ' : '') + 'fatigue ' + j.fatigue + '/5' : ''}${j.soreness >= 4 ? ', soreness ' + j.soreness + '/5' : ''}: how you feel counts as much as the numbers, so today is held one step lower${rec0 != null && rec0 !== rec ? ` (recovery ${rec0}% treated as ${rec}%)` : ''}. ` + body;
+  else if (feelGood && z === 'mid') body += ' You rated yourself ready, so a planned hard session is fine; just don’t add to it.';
+  return { head, body, target: easing ? [Math.min(target[0], 6), Math.min(target[1], 11)] : target, planned, rest, easing: easing ? rs : null, feelBad: !!feelBad, recUsed: rec };
 }

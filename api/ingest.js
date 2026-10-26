@@ -14,7 +14,7 @@ import crypto from 'node:crypto';
 
 process.env.TZ = process.env.BASELINE_TZ || 'Europe/Berlin'; // the app works in local wall-clock time
 
-const ENGINE_FILES = ['util.js', 'apple.js', 'shortcut.js', 'strava.js', 'model.js', 'insights.js', 'calib.js', 'tests.js', 'race.js'];
+const ENGINE_FILES = ['util.js', 'apple.js', 'shortcut.js', 'strava.js', 'model.js', 'insights.js', 'calib.js', 'recovery.js', 'tests.js', 'race.js', 'planedit.js'];
 let engine = null;
 export function loadEngine(dir = path.join(process.cwd(), 'public', 'js')) {
   if (engine) return engine;
@@ -85,7 +85,7 @@ export function ingestText(E, D, text) {
   return { r, months: Object.keys(docs).sort(), docs };
 }
 export function summarize(E, D) {
-  const M = E.calibrate(E.enrichModel(E.buildModel(D)), D);
+  const M = E.calibrate(E.enrichModel(E.scoreModel(E.buildModel(D), D)), D);
   return E.morningSummary(M, M.today);
 }
 

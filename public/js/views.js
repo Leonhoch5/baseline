@@ -102,7 +102,8 @@ VIEWS.today = (v) => {
     return;
   }
   const z = recoveryZone(d.rec), coach = coachFor(d, M);
-  const recNote = d.rec != null ? `HRV ${d.hrv != null ? Math.round(d.hrv) + ' ms' : '–'} · RHR ${d.rhr ?? '–'}` + (d.recConf ? ` · ${d.recConf.level} confidence` : '') : d.calibrating ? 'Needs 4 nights of data' : 'Wear your Watch to sleep';
+  const topWhy = d.recWhy && d.recWhy.length ? d.recWhy.filter(w => Math.abs(w.pts) >= 0.15).slice(0, 2).map(w => `${w.label} ${w.pts >= 0 ? '↑' : '↓'}`).join(' · ') : '';
+  const recNote = d.rec != null ? (topWhy || 'All signals near your normal') + (d.recConf ? ` · ${d.recConf.level} confidence` : '') : d.calibrating ? 'Baseline building: needs about 10 nights' : d.recMissing && d.recMissing.length ? d.recMissing[0][0].toUpperCase() + d.recMissing[0].slice(1) : 'Wear your Watch to sleep';
   const sleepNote = d.sleepMin != null ? `${fmtHM(d.sleepMin)} of ${fmtHM(d.need)} needed` : 'No sleep recorded';
   const ssW = sleepScoreWord(d.sleepScore);
   const [lo, hi] = coach.target;
@@ -182,7 +183,8 @@ VIEWS.sleep = (v) => {
     </div>
     <div class="panel"><div class="panel-h"><h2>Sleep need</h2></div>
       <div class="equation"><span><b>${fmtHM(np.base)}</b>baseline</span><span>+</span><span><b>${fmtHM(np.strain)}</b>for strain</span><span>+</span><span><b>${fmtHM(np.debt)}</b>for debt</span><span>=</span><span><b>${fmtHM(d.need)}</b>needed</span></div>
-      ${tonight ? `<p class="muted" style="margin:14px 0 0;font-size:13px">Tonight: aim for <b style="color:var(--fg)">${fmtHM(tonight.need)}</b> asleep. To wake at ${fmtClock(tonight.wake, true)}, be in bed by <b style="color:var(--fg)">${fmtClock(tonight.bed, true)}</b>.</p>` : ''}
+      ${d.debt14 != null ? `<p class="sub" style="margin:12px 0 0;font-size:13px">${d.debt14 >= 30 ? `<b style="color:var(--rec-lo)">Sleep debt: ${fmtHM(d.debt14)} h</b> behind your need over the last two weeks. A quarter of it is added to tonight’s need; a long night repays at most 1½ h at a time.` : d.debt14 > 0 ? `Sleep debt: ${fmtHM(d.debt14)} h, nearly cleared.` : '<b style="color:var(--rec-hi)">No sleep debt</b> left after last night.'}</p>` : ''}
+      ${tonight ? `<p class="muted" style="margin:14px 0 0;font-size:13px">Tonight: aim for <b style="color:var(--fg)">${fmtHM(tonight.need)}</b> asleep${tonight.keySession ? ` (15 min extra before “${esc(tonight.keySession.title)}”)` : ''}. To wake at ${fmtClock(tonight.wake, true)}, be in bed by <b style="color:var(--fg)">${fmtClock(tonight.bed, true)}</b>.</p>` : ''}
     </div>
   </div>
   ${sleepScoreHtml(d)}
@@ -216,10 +218,13 @@ function sleepPlanner(d, M) {
   const ws = []; for (let i = 0; i < 7; i++) { const x = M.day[addDays(d.date, -i)]; if (x && x.sleep) ws.push(minOfDayLms(x.sleep.le)); }
   if (!ws.length) return null;
   const wake = median(ws);
-  const need = M.prof.needBase + (d.strain != null ? Math.max(0, d.strain - 10) * 3 : 0) + (d.debt ? Math.min(60, d.debt * 0.35) : 0);
+  // tonight's need: baseline + today's strain + a quarter of the 2-week debt (max 1 h) + 15 min before a key session or test
+  const tomorrow = M.plan && M.plan.sessions ? M.plan.sessions.filter(s => s.date === addDays(d.date, 1) && !s.isRest && ['hard', 'key', 'test', 'race'].includes(s.intensity)) : [];
+  const keyAdj = tomorrow.length ? 15 : 0;
+  const need = M.prof.needBase + (d.strain != null ? Math.max(0, d.strain - 10) * 3 : 0) + (d.debt14 ? Math.min(60, Math.round(d.debt14 * 0.25)) : 0) + keyAdj;
   const effs = []; for (let i = 0; i < 7; i++) { const x = M.day[addDays(d.date, -i)]; if (x && x.eff) effs.push(x.eff); }
   const eff = effs.length ? clamp(mean(effs), 0.75, 0.98) : 0.9;
-  return { need, wake, bed: (wake - need / eff + 1440 * 2) % 1440 };
+  return { need, wake, bed: (wake - need / eff + 1440 * 2) % 1440, keySession: tomorrow[0] || null, debtPart: d.debt14 ? Math.min(60, Math.round(d.debt14 * 0.25)) : 0 };
 }
 function sleepBars(el, days) {
   barChart(el, {

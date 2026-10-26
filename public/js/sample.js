@@ -23,9 +23,9 @@ function makeSampleData() {
     // last night (wake on `date`)
     const alc = prevAlcohol;
     const bedMin = nextBed; // minutes after midnight of previous day (may exceed 1440)
-    const asleep = clamp(440 + rn() * 32 - (alc ? 35 : 0) - fatigue * 6, 330, 540);
+    const asleep = clamp(478 + rn() * 34 - (alc ? 40 : 0) - fatigue * 6, 330, 580);
     const deep = asleep * clamp(0.17 + rn() * 0.02 - (alc ? 0.03 : 0), 0.08, 0.25), rem = asleep * clamp(0.23 + rn() * 0.025 - (alc ? 0.04 : 0), 0.1, 0.3);
-    const awake = clamp(18 + rn() * 7 + (alc ? 12 : 0), 5, 60), core = asleep - deep - rem;
+    const awake = clamp(14 + rn() * 6 + (alc ? 14 : 0), 4, 60), core = asleep - deep - rem;
     const ls = lmsOf(addDays(date, -1) + 'T00:00') + bedMin * 60000;
     const le = ls + (asleep + awake) * 60000;
     const segs = []; let off = 0;

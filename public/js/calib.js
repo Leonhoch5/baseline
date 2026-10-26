@@ -1,7 +1,7 @@
 // ---------- calibration: robust personal baselines, documented load metrics, sleep regularity,
 // individual responses, and leakage-free prediction with temporal validation ----------
 const CAL_VERSION = 'calib-1.0';
-const CAL_FLOOR = { hrv: 0.05, rhr: 1.0, sleep: 20, mid: 15, resp: 0.3, temp: 0.12 };
+const CAL_FLOOR = { hrv: 0.05, rhr: 1.0, shr: 1.0, sleep: 20, mid: 15, resp: 0.3, temp: 0.12 };
 
 function robustStats(vals) {
   if (!vals.length) return null;
@@ -12,14 +12,16 @@ function checkinOf(M, date) { const e = M.journal && M.journal[date]; return e |
 function sleepMidMin(d) { if (!d || !d.sleep) return null; const mid = (d.sleep.ls + d.sleep.le) / 2; return (minOfDayLms(mid) - 720 + 1440) % 1440; } // minutes after noon
 
 // ---- 1. robust multi-window baselines (no future data: day i uses days before i) ----
+function confounded(M, date) { const J = M.journal || {}, jy = J[addDays(date, -1)] || {}, jt = J[date] || {}; return !!(jy.alcohol || jt.sick || jy.sick || (M.plan && M.plan.sickOn && M.plan.sickOn(date))); }
 function calBaselines(M) {
-  const ds = M.dates, N = ds.length;
+  const ds = M.dates, N = ds.length; M.calBase = true;
   const get = {
     hrv: d => d.hrv != null && d.hrv > 0 ? Math.log(d.hrv) : null,
     rhr: d => d.rhr != null ? d.rhr : null,
     sleep: d => d.sleepMin != null ? d.sleepMin : null,
     mid: d => sleepMidMin(d),
     resp: d => d.resp != null ? d.resp : null,
+    shr: d => d.sleep && d.sleep.hrAvg != null ? d.sleep.hrAvg : null,
     temp: d => d.temp != null ? d.temp : null,
   };
   for (const key in get) {
@@ -36,6 +38,8 @@ function calBaselines(M) {
       if (s28) { r.med = s28.med; r.mad = s28.mad; if (x[i] != null) r.z = (x[i] - s28.med) / Math.max(s28.mad, fl); }
       // likely artifact: far outside the personal distribution. Kept and shown, but excluded from later baselines.
       if (r.z != null && (key === 'hrv' || key === 'rhr') && Math.abs(r.z) > 5) { r.flag = 'outlier'; ok[i] = false; }
+      // nights after alcohol or while sick are real, but they would drag the baseline: shown, not used for later baselines
+      if (ok[i] && key !== 'sleep' && key !== 'mid' && confounded(M, d.date)) { r.conf = true; ok[i] = false; }
       const s7 = []; for (let k = Math.max(0, i - 6); k <= i; k++) if (ok[k]) s7.push(x[k]);
       if (s7.length >= 3) { r.s7 = mean(s7); if (s28) r.zs7 = (r.s7 - s28.med) / Math.max(s28.mad, fl); if (sR) r.zr7 = (r.s7 - sR.med) / Math.max(sR.mad, fl); }
       if (sR) { r.refMed = sR.med; if (s28) r.shift = (s28.med - sR.med) / Math.max(sR.mad, fl); }
@@ -111,7 +115,9 @@ function calConfidence(M) {
   for (const date of M.dates) {
     const d = M.day[date], c = d.cal || {};
     const reasons = []; let s = 0;
-    if (c.hrv && c.hrv.z != null) s += 2; else reasons.push(c.hrv && c.hrv.x != null ? 'HRV baseline still building (' + c.hrv.n28 + ' of 10 nights)' : 'No HRV last night');
+    const nS = d.sleep && d.sleep.hrvN != null ? d.sleep.hrvN : null;
+    if (c.hrv && c.hrv.z != null) { s += nS != null && nS <= 1 ? 1.2 : 2; if (nS != null && nS <= 1) reasons.push('Only one HRV sample last night'); } else reasons.push(c.hrv && c.hrv.x != null ? 'HRV baseline still building (' + c.hrv.n28 + ' of 10 nights)' : 'No HRV last night');
+    if (d.recParts && d.recParts.hrv && d.recParts.hrv.w7 < 4) { s -= 0.5; reasons.push('Fewer than 4 HRV nights this week'); }
     if (c.rhr && c.rhr.z != null) s += 1.5; else reasons.push(c.rhr && c.rhr.x != null ? 'Resting HR baseline still building' : 'No resting heart rate');
     if (d.sleepMin != null) s += 1; else reasons.push('No sleep recorded');
     const nb = Math.min(c.hrv ? c.hrv.n28 : 0, c.rhr ? c.rhr.n28 : 0);
@@ -390,7 +396,7 @@ function calibrate(M, D) {
   if (!M || M.empty) return M;
   const t0 = performance.now ? performance.now() : Date.now();
   const sex = (D.metaApple && D.metaApple.sex) || (D.profile && D.profile.sex) || 'm';
-  calBaselines(M);
+  if (!M.calBase) calBaselines(M);
   calLoad(M, sex);
   calConfidence(M);
   M.cal = { version: CAL_VERSION, sex };

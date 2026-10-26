@@ -438,3 +438,11 @@ fieldset.wd input { width: auto; margin: 0; }
   .ps .r { grid-column: 2; justify-content: flex-start; }
   .ps .r .btn { padding: 4px 10px; }
 }
+
+/* recovery v2 reasons */
+.ins.why { grid-template-rows: auto auto; }
+.ins.why .why-t { grid-column: 1 / -1; margin: -4px 0 0; font-size: 12px; color: var(--fg-2); line-height: 1.45; }
+.ins.why.bad > span:first-child { color: var(--rec-lo); } .ins.why.good > span:first-child { color: var(--rec-hi); }
+.ins.why > span:first-child .muted { color: var(--fg-2); }
+.dist { display: flex; height: 12px; border-radius: 6px; overflow: hidden; gap: 2px; margin: 6px 0 4px; }
+.dist span { display: block; min-width: 0; } .dist .hi { background: var(--rec-hi); } .dist .mid { background: var(--rec-mid); } .dist .lo { background: var(--rec-lo); }

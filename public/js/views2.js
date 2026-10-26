@@ -20,9 +20,16 @@ function statusPanelHtml(st, full) {
   </div>`;
 }
 function contributorsHtml(d) {
+  if (d && d.recWhy) {
+    const tone = p => p >= 0.15 ? 'good' : p <= -0.15 ? 'bad' : 'neutral';
+    const rows = d.recWhy.map(w => { const bar = Math.min(50, Math.abs(w.pts) / 1.2 * 50); return `<div class="ins why ${tone(w.pts)}"><span>${esc(w.label)}<br><span class="muted" style="font-size:11px">${esc(w.val || '')}</span></span><div class="axis"><span style="${w.pts >= 0 ? `left:50%;width:${bar}%` : `left:${50 - bar}%;width:${bar}%`};background:${w.pts >= 0.15 ? 'var(--rec-hi)' : w.pts <= -0.15 ? 'var(--rec-lo)' : 'var(--fg-2)'}"></span></div><span class="v">${w.pts >= 0 ? '+' : '−'}${Math.abs(w.pts).toFixed(2)}</span><p class="why-t">${esc(w.text || '')}</p></div>`; }).join('');
+    const miss = d.recMissing && d.recMissing.length ? `<p class="muted" style="font-size:12px;margin:8px 0 0">Not available: ${esc(d.recMissing.join(', '))}.</p>` : '';
+    const sum = `<p class="muted" style="font-size:12px;margin:8px 0 0">Score = 50 ${d.recCore >= 0 ? '+' : '−'} ${Math.abs(Math.round(40 * d.recCore))} from HRV, sleeping heart rate and sleep${d.recPenalty ? ` − ${Math.abs(Math.round(d.recPenalty))} in penalties` : ''}. Green needs several signals clearly better than your own normal; nothing is rewarded for being merely normal.</p>`;
+    return rows + sum + miss;
+  }
   const cs = recoveryContributors(d);
-  if (!cs.length) return '<p class="muted" style="margin:0">Contributors appear once a recovery score has been calculated.</p>';
-  return cs.map(c => { const w = Math.min(50, Math.abs(c.z) / 2.5 * 50); return `<div class="ins"><span>${esc(c.label)}<br><span class="muted" style="font-size:11px">${esc(c.val)} · weight ${c.weight}%</span></span><div class="axis"><span style="${c.z >= 0 ? `left:50%;width:${w}%` : `left:${50 - w}%;width:${w}%`};background:${c.z >= 0 ? 'var(--rec-hi)' : 'var(--rec-lo)'}"></span></div><span class="v ${c.z >= 0.3 ? 'delta-good' : c.z <= -0.3 ? 'delta-bad' : ''}">${c.z >= 0 ? '+' : '−'}${Math.abs(c.z).toFixed(1)} SD</span></div>`; }).join('') +
+  if (!cs.length) return `<p class="muted" style="margin:0">${d && d.recMissing && d.recMissing.length ? 'No score: ' + esc(d.recMissing.join(', ')) + '.' : 'Contributors appear once a recovery score has been calculated.'}</p>`;
+  return cs.map(c => { const w = Math.min(50, Math.abs(c.z) / 2.5 * 50); return `<div class="ins"><span>${esc(c.label)}<br><span class="muted" style="font-size:11px">${esc(c.val)} · weight ${c.weight}%</span></span><div class="axis"><span style="${c.z >= 0 ? `left:50%;width:${w}%` : `left:${50 - w}%;width:${w}%`};background:${c.tone === 'good' ? 'var(--rec-hi)' : c.tone === 'bad' ? 'var(--rec-lo)' : 'var(--fg-2)'}"></span></div><span class="v">${c.z >= 0 ? '+' : '−'}${Math.abs(c.z).toFixed(1)}</span></div>`; }).join('') +
     '<p class="muted" style="font-size:12px;margin:8px 0 0">Bars show how far each signal was from your own 30-day normal, in standard deviations. Green helps recovery, red holds it back.</p>';
 }
 function coachPanelHtml(M, date) {

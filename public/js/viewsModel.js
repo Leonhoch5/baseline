@@ -22,6 +22,29 @@ const REF = {
   hirsh: ['Hirshkowitz et al. 2015, Sleep Health (NSF)', 'https://doi.org/10.1016/j.sleh.2014.12.010'],
   bellenger: ['Bellenger et al. 2016, Sports Med', 'https://doi.org/10.1007/s40279-016-0484-2'],
   manresa: ['Manresa-Rocamora et al. 2021, IJERPH', 'https://doi.org/10.3390/ijerph181910299'],
+  plews14: ['Plews et al. 2014, IJSPP (how many days of HRV)', 'https://doi.org/10.1123/ijspp.2013-0455'],
+  plews13b: ['Plews et al. 2013, IJSPP (daily vs weekly HRV and performance)', 'https://doi.org/10.1123/ijspp.8.6.688'],
+  vesterinen: ['Vesterinen et al. 2016, Med Sci Sports Exerc (HRV-guided training)', 'https://doi.org/10.1249/MSS.0000000000000910'],
+  javaloyes: ['Javaloyes et al. 2019, IJSPP (HRV-guided cycling)', 'https://doi.org/10.1123/ijspp.2018-0122'],
+  flatt: ['Flatt & Esco 2016, J Strength Cond Res (HRV coefficient of variation)', 'https://doi.org/10.1519/JSC.0000000000001095'],
+  kiviniemi: ['Kiviniemi et al. 2006, Eur J Appl Physiol (parasympathetic saturation)', 'https://doi.org/10.1007/s00421-005-0130-4'],
+  herzig: ['Herzig et al. 2018, Front Physiol (night-to-night HRV reliability)', 'https://doi.org/10.3389/fphys.2017.01100'],
+  ogrady: ['O’Grady et al. 2024, Sensors (Apple Watch SDNN vs Polar H10)', 'https://doi.org/10.3390/s24196220'],
+  altini21: ['Altini & Plews 2021, Sensors (what moves resting HR and HRV, 28k users)', 'https://doi.org/10.3390/s21237932'],
+  pietila: ['Pietilä et al. 2018, JMIR Ment Health (alcohol and nocturnal HR/HRV)', 'https://doi.org/10.2196/mental.9519'],
+  leota: ['Leota et al. 2025, Nat Commun (evening exercise and sleep, 4 M nights)', 'https://doi.org/10.1038/s41467-025-58271-x'],
+  peake: ['Peake, Buchheit & Stanley 2013, Sports Med (autonomic recovery after exercise)', 'https://doi.org/10.1007/s40279-013-0083-4'],
+  vandongen: ['Van Dongen et al. 2003, Sleep (cumulative cost of sleep restriction)', 'https://doi.org/10.1093/sleep/26.2.117'],
+  kitamura: ['Kitamura et al. 2016, Sci Rep (estimating sleep debt)', 'https://doi.org/10.1038/srep35812'],
+  banks: ['Banks et al. 2010, Sleep (one long night does not repay 5 short ones)', 'https://doi.org/10.1093/sleep/33.8.1013'],
+  walsh: ['Walsh et al. 2021, Br J Sports Med (sleep and the athlete consensus)', 'https://doi.org/10.1136/bjsports-2020-102025'],
+  sargent: ['Sargent et al. 2021, IJSPP (athletes’ sleep need vs obtained)', 'https://doi.org/10.1123/ijspp.2020-0213'],
+  millerrr: ['Miller et al. 2020, PLoS ONE (respiratory rate and COVID-19, WHOOP)', 'https://doi.org/10.1371/journal.pone.0243693'],
+  mason: ['Mason et al. 2022, Sci Rep (temperature, HR, RR, HRV before illness, Oura)', 'https://doi.org/10.1038/s41598-022-07314-0'],
+  saw: ['Saw, Main & Gastin 2016, Br J Sports Med (subjective vs objective monitoring)', 'https://doi.org/10.1136/bjsports-2015-094758'],
+  doherty: ['Doherty et al. 2025, Transl Exerc Biomed (composite wearable scores: little validation)', 'https://doi.org/10.1515/teb-2025-0001'],
+  oura: ['Oura: readiness contributors and recovery index', 'https://support.ouraring.com/hc/en-us/articles/360025589793'],
+  wittmann: ['Wittmann et al. 2006, Chronobiol Int (social jetlag)', 'https://doi.org/10.1080/07420520500545979'],
 };
 const METHODS = [
   { id: 'baseline', title: 'Personal baselines', ev: 'ev', refs: ['plews12', 'plews13', 'buchheit', 'miller', 'munoz'],
@@ -30,12 +53,12 @@ const METHODS = [
     how: 'For each day, using only earlier days: 28-day median and robust spread (MAD × 1.4826, minimum 10 days), 7-day mean, and a 90-day reference (days 29–90 back, minimum 20). Deviation = (value − median) / spread. Readings more than 5 robust spreads away are flagged as likely artifacts, still shown, and left out of later baselines. The 7-day mean is also compared with the 90-day reference, so a slow drift isn’t absorbed by the 28-day baseline without notice.',
     limits: 'The windows and the ±5 threshold are engineering choices, not validated cut-offs. Apple Watch stores HRV as SDNN from short recordings, which agreed only moderately with ECG (ICC 0.67) and isn’t comparable with published RMSSD values, so it’s only compared with your own history. If you change device or HRV metric, the baseline restarts instead of mixing the two.',
     eval: 'Data completeness and the share of flagged readings are shown under Data quality. Baselines are judged by how well they serve the predictions below.' },
-  { id: 'recovery', title: 'Recovery estimate (0–100%)', ev: 'eng', refs: ['bellenger', 'manresa', 'plews13'],
-    why: 'Combining HRV, resting heart rate and sleep relative to your baseline is a common way to summarise readiness, but no published formula has been validated for this purpose.',
-    vars: 'HRV deviation (weight 50%), resting HR deviation (25%, inverted), sleep vs need (15%), respiratory rate (10%, only when raised).',
-    how: 'Weighted average of the deviations, mapped to 0–100 with a logistic curve. Green ≥ 67, yellow 34–66, red ≤ 33. A confidence level (low, moderate, high) is shown, based on which inputs exist and how long the baselines are.',
-    limits: 'The weights are fixed assumptions, not learned. HRV can rise both with good adaptation and with overreaching (Bellenger 2016), so a single score doesn’t mean you are fit or unfit to train. Treat it as a summary of measurements, not a measurement of recovery itself.',
-    eval: 'Once you log morning check-ins, the Prediction accuracy section shows how well readiness can actually be predicted, and whether a personalized model beats simple baselines.' },
+  { id: 'recovery', title: 'Recovery score (0–100%), strict version', ev: 'eng', refs: ['plews13b', 'plews14', 'vesterinen', 'javaloyes', 'buchheit', 'flatt', 'kiviniemi', 'herzig', 'miller', 'ogrady', 'altini21', 'pietila', 'leota', 'peake', 'millerrr', 'mason', 'oura', 'doherty', 'bellenger'],
+    why: 'No composite recovery score has been validated prospectively (Doherty 2025), so this one follows the parts that are: the 7-day HRV average judged against a personal band (the rule used in the HRV-guided training trials), resting heart rate read together with HRV, sleep against need, and illness signals that only subtract. Single-day HRV barely relates to adaptation (r ≈ −0.06) while the weekly average does (r ≈ 0.72, Plews 2013).',
+    vars: 'HRV: log of the night’s Apple Watch SDNN samples; 7-night mean vs the 28-night median, band = ±0.5 robust SD; the single night weighs 10–30% depending on how many samples it has (1–4+). Sleeping heart rate: whole-night average (60%) and lowest 5 minutes (40%) vs 28 nights, plus when the low was reached (Oura’s recovery index: ≥ 6 h of sleep after the low is good, ≤ 2 h is late). Sleep: the sleep score and the 14-night debt. Penalties only: yesterday’s load above 2× your average day (lingering 40% a second day), breathing rate ≥ 1.5 SD up, wrist temperature ≥ +0.25 °C and ≥ 2 SD, SpO2 < 93%, alcohol the evening before, very high reported stress. Sick or injured: capped at 30 (45 the day after).',
+    how: 'Core = 30% HRV + 25% sleeping HR + 25% sleep (weights move to the other physiology signal when one is missing), each on a −1.5…+1 scale with the positive side capped (HRV 0.8, HR 0.7, sleep 0.9). Score = 50 + 40 × core − penalties. So a normal night is 50 (yellow); green needs several signals clearly better than your own normal. HRV far above the band is capped at a small bonus (Vesterinen 2016 treats both sides of the band as a reason to hold back). Low HRV with a clearly low sleeping heart rate and no HRV–HR relation over 4 weeks is treated as parasympathetic saturation (Kiviniemi 2006, Buchheit 2014), not fatigue. Nights after alcohol or while sick are shown but kept out of later baselines. The morning check-in does not enter the score (it is the yardstick), but a bad rating downgrades the day’s guidance one step (Saw 2016).',
+    limits: 'Apple Watch HRV is SDNN from 1–3 short samples a night (ICC 0.67 vs ECG, proportional bias, Miller 2022; MAPE 29% vs Polar H10, O’Grady 2024; night-to-night ICC for SDNN as low as 0.05–0.13, Herzig 2018), which is why the week carries the HRV weight. The caps, weights and penalty sizes are design choices, informed by effect sizes (alcohol: sleeping HR +4–9 bpm, HRV −6–13 ms, Pietilä 2018; hard training: rMSSD −5%, Altini & Plews 2021) but not fitted. HRV can rise in overreaching too (Bellenger 2016). Training that ends within 4 h of bed raises nocturnal HR on its own (Leota 2025): the score still counts it, the text says why.',
+    eval: 'The Recovery score check above compares the strict score and the previous formula with your morning readiness and fatigue ratings, and shows the share of green/yellow/red days. On the first 60 days of real data the strict score put 11% of days green and 23% red (previous formula: 45% green, 15% red) and correlated 0.8 with morning readiness over 9 check-ins (too few to trust).' },
   { id: 'load', title: 'Training load: TRIMP, session RPE and strain', ev: 'ev', refs: ['morton', 'foster', 'williams'],
     why: 'Internal load can be quantified from heart rate (TRIMP) or from perceived effort × duration (session RPE). Each has its own units, and they shouldn’t be mixed.',
     vars: 'Heart-rate stream or Watch heart rate during each workout, resting HR baseline, max HR, sex; RPE (0–10) and minutes.',
@@ -54,10 +77,16 @@ const METHODS = [
     how: 'SRI = 200 × (share of 5-minute slots in the same sleep/wake state 24 h apart) − 100, over the last 14 days with complete nights. Individual sleep need: a hinge regression of your morning outcome on sleep duration (plateau searched between 6 and 9.5 h), with a bootstrap interval; reported only with ≥ 30 nights, a positive slope and a narrow interval, and always kept within 7–9 h.',
     limits: 'Apple Watch overestimated total sleep by about 40 minutes and detected wake poorly (26%) against polysomnography; stage agreement was low (κ 0.20). Stages and efficiency are therefore shown as estimates only. A sleep-need estimate from observational data is an association, not proof of what you need.',
     eval: 'The sleep-need analysis reports its interval and sample size and says so when the evidence is unclear.' },
+  { id: 'sleepdebt', title: 'Sleep need and 14-night sleep debt', ev: 'ev', refs: ['vandongen', 'kitamura', 'banks', 'walsh', 'sargent', 'wittmann', 'miller'],
+    why: 'Two weeks at 6 h costs about as much as two nights without sleep, and people stop noticing after the first day (Van Dongen 2003). Athletes say they need 8.3 h and get 6.7 (Sargent 2021); the consensus is 7–9 h, athletes possibly more (Walsh 2021).',
+    vars: 'Baseline need (your setting, default 7:45 as the Watch measures it), + 3 min per strain point above 10, + a quarter of the running debt (max 1 h), + 15 min before a key session or test.',
+    how: 'Debt runs as a balance: each night adds (need − asleep); a long night repays at most 90 minutes (Banks 2010: one 10-h night does not undo five short ones; Kitamura 2016: about four nights to repay an hour); 15% of the balance is forgotten each night, so it covers roughly two weeks. Shown on the Sleep tab, used in the recovery score and in tonight’s bedtime. Social jetlag (weekend vs weekday sleep midpoint) is flagged from one hour (Wittmann 2006).',
+    limits: 'The Watch over-reads total sleep by about 40 minutes against polysomnography (Miller 2022), so “7:45 measured” is nearer 7 h of real sleep; set your baseline need accordingly rather than lowering it. The decay and repayment cap are design choices.',
+    eval: 'Sleep need itself is checked in the Sleep model section once enough nights with a morning check-in exist.' },
   { id: 'sleepscore', title: 'Sleep score (0–100%)', ev: 'eng', refs: ['ohayon', 'hirsh', 'miller', 'phillips', 'garmin', 'whoop'],
     why: 'Hours alone miss how well you slept. Like WHOOP (hours vs need, consistency, efficiency, sleep stress) and Garmin (duration, stages, disruptions, stress), the score blends quantity with quality.',
     vars: 'Asleep vs personal sleep need, time in bed, awake minutes and wake-ups after sleep onset, deep and REM share, overlap of the sleep window with the previous 4 nights, overnight HRV and average sleeping heart rate vs your 30-day baseline.',
-    how: 'Each part is scored 0–100 with piecewise-linear curves anchored on published adult norms (efficiency ≥ 85% good; awake after sleep onset ≤ 20–30 min; deep ~15–20%, REM ~20–25% of sleep). Weights: hours vs need 40%, efficiency 15%, consistency 15%, disruptions 10%, deep & REM 10%, sleep stress 10%. Missing parts are dropped and the rest rescaled. 90+ excellent, 80–89 good, 60–79 fair, < 60 poor (Garmin’s bands).',
+    how: 'Each part is scored 0–100 with piecewise-linear curves anchored on published adult norms, set strictly: 85% of need scores 62, 92% scores 82; efficiency 85% scores 62, 95% scores 100; 20 min awake scores 80, 40 min 50; deep ≥ 13% (Watch under-reads deep) and REM ≥ 20% score full. Weights: hours vs need 40%, efficiency 15%, consistency 15%, disruptions 10%, deep & REM 10%, sleep stress 10%. Missing parts are dropped and the rest rescaled. 90+ excellent, 80–89 good, 60–79 fair, < 60 poor (Garmin’s bands).',
     limits: 'The weights and curves are a design choice, not a validated clinical scale; WHOOP and Garmin don’t publish theirs. Apple Watch stages and wake detection are weak, which is why duration carries the most weight. Recovery still uses hours vs need, not this score, so it doesn’t count sleep HRV twice.',
     eval: 'Can be checked against next-morning readiness once enough check-ins exist (Model tab).' },
   { id: 'predict', title: 'Predictions and how they are tested', ev: 'exp', refs: ['rothschild', 'nuuttila'],
@@ -186,6 +215,7 @@ VIEWS.model = (v) => {
     ${st('Check-ins', M.checkins >= 36 ? 'ok' : M.checkins ? 'part' : '', `${M.checkins} logged; personal readiness model needs ~36`)}
     ${st('Predictions', bestPred ? 'ok' : Object.values(M.pred).some(p => p.status === 'baseline') ? 'part' : '', bestPred ? `${bestPred} target${bestPred > 1 ? 's' : ''} use a personalized model` : 'simple baselines until a model proves better')}
   </div>
+  ${recoveryEvalHtml(M)}
   ${outlookHtml(M, false)}
   <div class="panel"><div class="panel-h"><h2>Prediction accuracy</h2><span class="aside">tested day by day on data the model hadn’t seen</span></div>${accuracyHtml(M)}</div>
   ${responsesHtml(M)}
@@ -194,3 +224,16 @@ VIEWS.model = (v) => {
   ${methodsHtml()}`;
   drawAccuracy(v, M);
 };
+
+function recoveryEvalHtml(M) {
+  const e = recoveryEval(M, 60), f = x => x == null ? '–' : (x >= 0 ? '+' : '−') + Math.abs(x).toFixed(2);
+  const pct = (a, n) => n ? Math.round(a / n * 100) + '%' : '–';
+  const bar = d => d.n ? `<div class="dist"><span class="hi" style="flex:${d.green}" title="green ${d.green}"></span><span class="mid" style="flex:${d.yellow}" title="yellow ${d.yellow}"></span><span class="lo" style="flex:${d.red}" title="red ${d.red}"></span></div><div class="muted" style="font-size:12px">green ${pct(d.green, d.n)} · yellow ${pct(d.yellow, d.n)} · red ${pct(d.red, d.n)} · median ${d.median != null ? Math.round(d.median) : '–'} (${d.n} days)</div>` : '<p class="muted">No scored days.</p>';
+  return `<div class="panel"><div class="panel-h"><h2>Recovery score check</h2><span class="chip">${esc(M.recVersion || 'rec-2.0')}</span></div>
+    <div class="cols" style="gap:14px">
+      <div><div class="eyebrow">Last 60 days, strict score</div>${bar(e.dist)}</div>
+      <div><div class="eyebrow">Same days, previous formula</div>${bar(e.distV1)}</div>
+    </div>
+    <p class="sub" style="font-size:13px;margin:12px 0 0">${e.n >= 5 ? `Against your morning readiness (${e.n} check-ins): correlation ${f(e.r2)} for the strict score vs ${f(e.r1)} for the previous formula; against reported fatigue ${f(e.r2fat)} vs ${f(e.r1fat)}. ${e.nGreen ? `On green days you rated readiness ≥ 7 in ${pct(Math.round(e.greenOk * e.nGreen), e.nGreen)} of ${e.nGreen} cases` : 'No green days with a check-in yet'}${e.nRed ? `; on red days ≤ 4 in ${pct(Math.round(e.redOk * e.nRed), e.nRed)} of ${e.nRed}` : ''}. ${e.n < 30 ? 'Too few check-ins to trust these numbers yet; they firm up around 30.' : ''}` : 'Log the morning check-in (Journal) for a few weeks and this panel shows how well the score matches how you felt.'}</p>
+    <p class="muted" style="font-size:12px;margin:6px 0 0">The strict score sits at 50 for a normal night, caps what good signals can add, and only subtracts for a hard day, alcohol, raised breathing rate or temperature, and illness. One Apple Watch HRV night is 1–3 samples, so the 7-night average carries most of the HRV weight.</p></div>`;
+}

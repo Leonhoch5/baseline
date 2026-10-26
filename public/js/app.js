@@ -18,7 +18,7 @@ function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storag
 function hasRealData() { return Object.keys(S.real.apple).length > 0 || Object.keys(S.real.strava).length > 0; }
 function cur() { return S.sample ? S.sampleData : S.real; }
 let recomputeT = null;
-function recompute() { try { const D = cur(); S.model = calibrate(enrichModel(buildModel(D)), D); try { S.model.race = raceModel(S.model, D); } catch (e) { console.error(e); } schedulePredLog(); } catch (e) { console.error(e); S.model = null; } }
+function recompute() { try { const D = cur(); S.model = calibrate(enrichModel(scoreModel(buildModel(D), D)), D); try { S.model.race = raceModel(S.model, D); } catch (e) { console.error(e); } schedulePredLog(); } catch (e) { console.error(e); S.model = null; } }
 function changed() { clearTimeout(recomputeT); recomputeT = setTimeout(() => { recompute(); render(); }, 40); }
 
 function bannerHtml() {
