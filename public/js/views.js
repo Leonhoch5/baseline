@@ -158,7 +158,7 @@ VIEWS.sleep = (v) => {
   const last14 = []; for (let i = 13; i >= 0; i--) { const k = addDays(S.date, -i); last14.push(M.day[k] || { date: k }); }
   const tonight = d ? sleepPlanner(d, M) : null;
   if (!sl && d && d.sleepSummary) {
-    v.innerHTML = `<div class="panel"><div class="eyebrow">Night ending ${esc(fmtDay(S.date))}</div><div style="font:600 34px/1.1 var(--font-display);margin-top:6px">${fmtHM(d.sleepMin)} <span class="muted" style="font-size:18px">asleep · ${pct(d.perf)} of ${fmtHM(d.need)} needed</span></div>
+    v.innerHTML = `<div class="panel"><div class="eyebrow">Night ending ${esc(fmtDay(S.date))}</div><div style="font:600 34px/1.1 var(--font-display);letter-spacing:-.02em;margin-top:6px">${fmtHM(d.sleepMin)} <span class="muted" style="font-size:18px">asleep · ${pct(d.perf)} of ${fmtHM(d.need)} needed</span></div>
       <p class="sub" style="margin:8px 0 0">Only the total is known for this night (from your Apple Health history), so stages and bed times aren't available. The sleep score (${d.sleepScore ?? '–'}%) is based on duration alone.</p></div>
       <div class="panel"><div class="panel-h"><h2>Last 14 nights</h2></div><div class="legend"><span><i class="box" style="background:var(--sleep)"></i>Asleep</span><span><i style="background:var(--fg-2)"></i>Sleep need</span></div><div class="chart" id="c-14"></div></div>`;
     v.insertAdjacentHTML('beforeend', sleepCoachHtml(M, S.date)); drawSleepWindows(v, M, S.date);
@@ -467,7 +467,7 @@ VIEWS.plan = (v) => {
   ${planChips}
   ${S.planImport ? planImportHtml() : ''}
   <div class="cols">
-    <div class="panel"><div class="eyebrow">Training plan${sel.status === 'next' ? ' · starts ' + esc(fmtDay(sel.start)) : sel.status === 'past' ? ' · finished' : ''}</div><h2 style="font:600 26px/1.1 var(--font-display);text-transform:uppercase;margin:6px 0">${esc(meta.name || 'Your plan')}</h2>
+    <div class="panel"><div class="eyebrow">Training plan${sel.status === 'next' ? ' · starts ' + esc(fmtDay(sel.start)) : sel.status === 'past' ? ' · finished' : ''}</div><h2 style="font:700 22px/1.2 var(--font-body);letter-spacing:-.02em;margin:4px 0 6px">${esc(meta.name || 'Your plan')}</h2>
       ${meta.goal ? `<p class="sub" style="margin:0 0 12px">${esc(meta.goal)}</p>` : ''}
       <dl class="kv" style="margin:0">
         ${race != null ? `<div><dt>Race</dt><dd>${race >= 0 ? race + ' days' : 'done'}<small>${esc(fmtDay(meta.raceDate))}</small></dd></div>` : ''}
@@ -479,7 +479,7 @@ VIEWS.plan = (v) => {
       ${later && sel.end >= later.start ? `<p class="muted" style="font-size:12px;margin:10px 0 0">“${esc(later.meta.name || 'The next plan')}” takes over from ${esc(fmtDay(later.start))}; this plan’s sessions after that are hidden.</p>` : ''}
       ${meta.source || meta.notes ? `<p class="muted" style="font-size:12px;margin:10px 0 0">${esc([meta.source ? 'Imported from ' + meta.source + '.' : '', meta.notes || ''].join(' ').trim())}</p>` : ''}
       ${delHtml}</div>
-    <div class="panel"><div class="eyebrow">Today</div><h2 style="font:600 22px/1.1 var(--font-display);text-transform:uppercase;margin:6px 0">${esc(coach.head)}</h2><p class="sub" style="margin:0">${esc(coach.body)}</p>
+    <div class="panel"><div class="eyebrow">Today</div><h2 style="font:700 20px/1.2 var(--font-body);letter-spacing:-.02em;margin:4px 0 6px">${esc(coach.head)}</h2><p class="sub" style="margin:0">${esc(coach.body)}</p>
       <div class="row" style="margin-top:12px">${todayDay && todayDay.rec != null ? `<span class="chip ${recoveryZone(todayDay.rec)}"><i></i>Recovery ${todayDay.rec}%</span>` : ''}<span class="chip">Strain target ${coach.target[0]}–${coach.target[1]}</span></div></div>
   </div>
   ${paces.length ? (() => {

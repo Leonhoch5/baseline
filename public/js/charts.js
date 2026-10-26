@@ -39,8 +39,9 @@ function bindHits(el, sel, onEnter) {
 
 function ringSvg(frac, color, val, unit) {
   const r = 70, c = 2 * Math.PI * r, f = clamp(frac || 0, 0, 1);
-  return `<svg viewBox="0 0 172 172" aria-hidden="true"><circle cx="86" cy="86" r="${r}" fill="none" stroke="var(--track)" stroke-width="12"/>` +
-    (f > 0 ? `<circle cx="86" cy="86" r="${r}" fill="none" stroke="${color}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${(c * f).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 86 86)"/>` : '') +
+  const track = color && color.startsWith('var(') ? `color-mix(in srgb, ${color} 22%, transparent)` : 'var(--track)';
+  return `<svg viewBox="0 0 172 172" aria-hidden="true"><circle cx="86" cy="86" r="${r}" fill="none" stroke="${track}" stroke-width="14"/>` +
+    (f > 0 ? `<circle cx="86" cy="86" r="${r}" fill="none" stroke="${color}" stroke-width="14" stroke-linecap="round" stroke-dasharray="${(c * f).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 86 86)"/>` : '') +
     `<text x="86" y="92" text-anchor="middle" class="ring-val">${esc(val)}</text><text x="86" y="120" text-anchor="middle" class="ring-unit">${esc(unit)}</text></svg>`;
 }
 

@@ -58,7 +58,7 @@
   function loginScreen(message) {
     let el = document.getElementById('login');
     if (!el) { el = document.createElement('div'); el.id = 'login'; document.body.appendChild(el); }
-    el.innerHTML = `<div class="login-card"><div class="brand"><b>BASELINE</b></div>
+    el.innerHTML = `<div class="login-card"><div class="brand"><b>Baseline</b></div>
       <p class="sub">Sign in with your email. You'll get a link; open it on this device.</p>
       <form id="loginForm"><input type="email" id="loginEmail" required placeholder="you@example.com" autocomplete="email"><button class="btn primary" type="submit">Send sign-in link</button></form>
       <p class="muted" id="loginMsg">${message || ''}</p></div>`;
