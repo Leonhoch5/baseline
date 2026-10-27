@@ -19,10 +19,12 @@ No database service, no third-party login: one app password, one Vercel project.
 4. Deploy (or redeploy after adding the variables). `https://<your-app>.vercel.app/api/health` lists anything still missing.
 
 ### 2. Move your data over
-```bash
-# put the export folder (export/apple, export/strava, …) next to package.json
-BASE_URL=https://<your-app>.vercel.app INGEST_TOKEN=… node scripts/import-export.mjs ./export
-```
+In the Claude version: Settings → **Backup and move** → *Download my data* (one JSON file).
+In this app: sign in → Settings → **Backup and move** → *Restore from a file* → pick that file. Done.
+The same two buttons are your backup: download now and then, restore if anything is ever lost.
+
+(Alternative from a terminal, with an export folder of `coll/id.json` files:
+`BASE_URL=https://<your-app>.vercel.app INGEST_TOKEN=… node scripts/import-export.mjs ./export`)
 
 ### 3. Use it
 Open the app and enter the app password (once per browser). On iPhone: Safari → Share → *Add to Home Screen*.

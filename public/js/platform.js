@@ -54,6 +54,13 @@
         },
       };
     },
+    // several documents in one request (restore from a backup)
+    async batch(writes) {
+      await api('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'batch', writes }) });
+      const touched = new Set();
+      for (const w of writes) { const m = cache[w.coll] = cache[w.coll] || new Map(); if (w.data == null) m.delete(w.id); else m.set(w.id, w.data); touched.add(w.coll); }
+      touched.forEach(notify);
+    },
     doc(path) {
       const [coll, id] = path.split('/');
       return {

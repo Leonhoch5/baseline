@@ -11,7 +11,7 @@ const COLLS = ['apple', 'strava', 'journal', 'planSessions', 'planWeeks', 'plans
 const S = {
   tab: 'today', date: todayYmd(), jdate: addDays(todayYmd(), -1), range: 90, actFilter: 'all', actLimit: 30, ovlLimit: 8, planAll: false,
   sample: false, sampleData: null, real: emptyData(), model: null, db: null, dbMode: 'loading', loaded: {},
-  importing: null, stravaSync: null, driveSync: null, impMonths: 12, jdraft: {}, confirmDelete: false, owner: null, guideOpen: false, planSel: null, planImport: null, planDel: null, testForm: null, planEdit: null, coachBusy: null, coachErr: null
+  importing: null, stravaSync: null, driveSync: null, impMonths: 12, jdraft: {}, confirmDelete: false, owner: null, guideOpen: false, planSel: null, planImport: null, planDel: null, testForm: null, planEdit: null, coachBusy: null, coachErr: null, backup: null
 };
 function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } }
@@ -481,6 +481,16 @@ const ACTIONS = {
   },
   'delete-ask': () => { S.confirmDelete = true; render(); },
   'delete-no': () => { S.confirmDelete = false; render(); },
+  'backup-download': async () => {
+    const st = document.getElementById('backupStatus');
+    try {
+      const out = exportAllData(), name = `baseline-export-${ymd(new Date())}.json`, text = JSON.stringify(out);
+      let dl = null; try { dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch (e) { dl = null; }
+      if (dl) { if (st) st.textContent = 'Confirm the download…'; await dl.save({ filename: name, data: text }); }
+      else { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); }
+      if (st) st.textContent = `${out.rows.length} documents, ${(text.length / 1024 / 1024).toFixed(1)} MB.`;
+    } catch (e) { if (st) st.textContent = e && e.code === 'declined' ? 'Download cancelled.' : humanError(e); }
+  },
   'delete-yes': async () => {
     const st = document.getElementById('delStatus');
     try {
@@ -579,11 +589,47 @@ async function savePlan() {
     S.planImport = null; S.planSel = id; changed();
   } catch (e) { I.saving = false; I.error = humanError(e); rerenderImport(); }
 }
+// everything in the current data set as rows [{coll, id, data}], the shape the server import and the restore use
+function exportAllData() {
+  const D = cur(), rows = [];
+  const push = (coll, id, data) => { if (data != null) rows.push({ coll, id, data }); };
+  for (const m of Object.keys(D.apple || {})) push('apple', m, D.apple[m]);
+  for (const m of Object.keys(D.strava || {})) push('strava', m, D.strava[m]);
+  for (const m of Object.keys(D.journal || {})) push('journal', m, D.journal[m]);
+  for (const m of Object.keys(D.preds || {})) push('preds', m, D.preds[m]);
+  for (const m of Object.keys(D.coach || {})) push('coach', m, D.coach[m]);
+  for (const w of D.planWeeks || []) { const { id, ...rest } = w; push('planWeeks', id || ('w' + String(w.week).padStart(2, '0')), rest); }
+  for (const s of D.planSessions || []) { const { id, ...rest } = s; if (id) push('planSessions', id, rest); }
+  for (const p of D.plans || []) { const { id, ...rest } = p; if (id) push('plans', id, rest); }
+  push('plan', 'meta', D.planMeta); push('plan', 'checks', D.planChecks); push('plan', 'edits', D.planEdits);
+  push('settings', 'profile', D.profile); push('settings', 'overlaps', D.overlaps); push('settings', 'tests', D.tests);
+  push('meta', 'apple', D.metaApple); push('meta', 'strava', D.metaStrava); push('meta', 'gdrive', D.metaDrive);
+  return { app: 'baseline', v: 1, exportedAt: new Date().toISOString(), rows };
+}
+async function restoreBackup(file) {
+  const st = () => document.getElementById('backupStatus');
+  const say = t => { S.backup = t; const el = st(); if (el) el.textContent = t; };
+  try {
+    say('Reading…');
+    const j = JSON.parse(await file.text());
+    if (!j || j.app !== 'baseline' || !Array.isArray(j.rows)) throw new Error('This is not a Baseline export file.');
+    const rows = j.rows.filter(r => r && /^[A-Za-z0-9_-]{1,40}$/.test(r.coll || '') && /^[A-Za-z0-9_-]{1,200}$/.test(r.id || '') && r.data && typeof r.data === 'object');
+    if (!rows.length) throw new Error('The file holds no documents.');
+    if (S.db && typeof S.db.batch === 'function') {
+      for (let i = 0; i < rows.length; i += 100) { await S.db.batch(rows.slice(i, i + 100)); say(`Restoring ${Math.min(i + 100, rows.length)} of ${rows.length}…`); }
+    } else {
+      let n = 0; for (const r of rows) { await writeDoc(r.coll + '/' + r.id, r.data); n++; if (n % 5 === 0 || n === rows.length) say(`Restoring ${n} of ${rows.length}…`); }
+    }
+    say(`Restored ${rows.length} documents from ${esc(file.name)}.`);
+    changed();
+  } catch (e) { say(humanError(e)); }
+}
 function selectText(el) { try { const r = document.createRange(); r.selectNodeContents(el); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); } catch (e) { /* ignore */ } }
 function wireDrop(v) {
   const sel = v.querySelector('#impMonths'); if (sel) sel.addEventListener('change', () => { S.impMonths = +sel.value; lsSet('baseline.impMonths', sel.value); });
   const fa = v.querySelector('#fileApple'); if (fa) fa.addEventListener('change', () => { if (fa.files[0]) importAppleFile(fa.files[0]); fa.value = ''; });
   const fs2 = v.querySelector('#fileStrava'); if (fs2) fs2.addEventListener('change', () => { if (fs2.files[0]) importStravaFile(fs2.files[0]); fs2.value = ''; });
+  const fb = v.querySelector('#fileBackup'); if (fb) fb.addEventListener('change', () => { if (fb.files[0]) restoreBackup(fb.files[0]); fb.value = ''; });
   v.querySelectorAll('.drop').forEach(dz => {
     dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
     dz.addEventListener('dragleave', () => dz.classList.remove('over'));

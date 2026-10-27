@@ -546,6 +546,13 @@ VIEWS.data = (v) => {
     <div class="row">${S.sample ? '<button class="btn" data-action="sample-off">Leave sample data</button>' : '<button class="btn" data-action="sample">Preview with sample data</button>'}
       ${S.confirmDelete ? `<span>Delete all imported Apple Health and Strava data? Journal entries and your plan stay.</span><button class="btn danger" data-action="delete-yes">Delete data</button><button class="btn ghost" data-action="delete-no">Cancel</button>` : `<button class="btn danger" data-action="delete-ask" ${hasRealData() ? '' : 'disabled'}>Delete imported data</button>`}
       <span class="muted" id="delStatus" style="font-size:12px"></span></div>
+  </div>
+  <div class="panel"><div class="panel-h"><h2>Backup and move</h2><span class="aside">everything in one file</span></div>
+    <p class="sub" style="margin:0 0 12px">Download everything this page holds (Watch data, Strava, journal, plan, settings, coach’s notes) as one JSON file. Keep it as a backup, or move to your own Baseline server: open Settings there and restore from the file.</p>
+    <div class="row"><button class="btn primary" data-action="backup-download" ${hasRealData() || S.sample ? '' : 'disabled'}>Download my data</button>
+      <label class="btn ghost" for="fileBackup" style="cursor:pointer">Restore from a file</label><input type="file" id="fileBackup" accept=".json,application/json" style="display:none">
+      <span class="muted" id="backupStatus" style="font-size:12px">${S.backup ? esc(S.backup) : ''}</span></div>
+    <p class="muted" style="font-size:12px;margin:10px 0 0">Restoring adds and replaces documents from the file; nothing else is deleted.</p>
   </div>`;
   wireDrop(v);
 };
