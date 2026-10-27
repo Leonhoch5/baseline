@@ -513,7 +513,7 @@ async function readPlanFiles(fileList) {
       else if (/\.csv$/.test(n)) { I.spec = csvToSpec(await f.text(), I.name); I.kind = 'csv'; I.start = I.spec.firstDate; }
       else if (/\.docx$/.test(n)) { I.text = (I.text ? I.text + '\n\n' : '') + await docxToText(f); }
       else if (/^image\//.test(f.type)) { I.images.push(f); }
-      else if (/\.pdf$/.test(n)) { I.error = 'PDFs can’t be read here. Copy the text into the box, take screenshots of the pages, or send the PDF to Claude in the chat.'; }
+      else if (/\.pdf$/.test(n)) { I.error = 'PDFs can’t be read here. Copy the text into the box or take screenshots of the pages.'; }
       else { I.text = (I.text ? I.text + '\n\n' : '') + await f.text(); }
       I.files.push(f.name);
     } catch (e) { I.error = (e && e.message) || 'This file couldn’t be read.'; }
@@ -538,7 +538,7 @@ async function convertPlan() {
     if (images.length) { const lim = await sample.limits().catch(() => null); if (!lim || !lim.images) throw { code: 'images_unavailable' }; images = images.slice(0, lim.images.maxCount); }
     const spec = await sample.json(planPrompt(I.text, I.start, todayYmd(), images.length > 0), { modelTier: 'complex', cache: false, signal: I.ctl.signal, ...(images.length ? { images } : {}) });
     if (!spec || typeof spec !== 'object' || (!Array.isArray(spec.phases) && !Array.isArray(spec.extras))) throw { code: 'invalid_json' };
-    spec.source = images.length ? 'screenshots, converted by Claude' : 'text, converted by Claude';
+    spec.source = images.length ? 'screenshots, converted by ' + aiName() : 'text, converted by ' + aiName();
     I.spec = spec; I.kind = 'claude';
     if (spec.startDate && /^\d{4}-\d{2}-\d{2}$/.test(spec.startDate)) I.start = spec.startDate;
     buildPreview();

@@ -89,3 +89,6 @@ function zoneLabels(hrMax, bounds) {
   const f = p => Math.round(hrMax * p);
   return [`${lo}–${f(0.6)}`, `${f(0.6) + 1}–${f(0.7)}`, `${f(0.7) + 1}–${f(0.8)}`, `${f(0.8) + 1}–${f(0.9)}`, `${f(0.9) + 1}+`];
 }
+
+// name of whatever answers AI requests on this platform (Claude inside claude.ai; Hack Club AI in the standalone app)
+function aiName() { return (typeof window !== 'undefined' && window.BASELINE_AI && window.BASELINE_AI.name) || 'Claude'; }

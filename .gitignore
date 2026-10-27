@@ -1,5 +1,7 @@
 node_modules/
 export/
-.env*
+.env
+.env.*
+!.env.example
 .vercel/
 .DS_Store

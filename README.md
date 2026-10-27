@@ -19,7 +19,11 @@ Static front end (`public/`) + Vercel serverless functions (`api/`) + Supabase (
    - `SUPABASE_URL` = Project URL
    - `SUPABASE_ANON_KEY` = anon public key
 3. Deploy. Check `https://<your-app>.vercel.app/api/health` returns `{"ok":true}`.
-4. For the iPhone sync (step 5) also add:
+4. For AI features (plan conversion from text, Word files or screenshots) add:
+   - `HACKCLUB_AI_KEY` = your Hack Club AI key (https://ai.hackclub.com/dashboard). It stays on the server; `/api/ai` only answers signed-in requests.
+   - optional `HACKCLUB_AI_MODEL` (default `anthropic/claude-haiku-5.5`, cheap and reads screenshots) and `HACKCLUB_AI_FALLBACKS`.
+   Hack Club AI has a $3/day budget per key; a plan conversion costs well under a cent.
+5. For the iPhone sync (step 6) also add:
    - `SUPABASE_SERVICE_ROLE_KEY` = service_role key (server only, never in the browser)
    - `USER_EMAIL` = your login email (or `BASELINE_USER_ID` = your user id from Authentication → Users)
    - `INGEST_TOKEN` = a long random secret, at least 16 characters (e.g. run `openssl rand -hex 24`)
@@ -35,7 +39,7 @@ SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… USER_EMAIL=you@example.com npm ru
 ### 4. Use it
 Open the app, enter your email, open the link from the email. On iPhone: Safari → Share → *Add to Home Screen*.
 
-### 5. iPhone sync + morning notification (replaces Google Drive)
+### 6. iPhone sync + morning notification (replaces Google Drive)
 The Shortcut sends its text straight to Baseline and gets this morning's summary back.
 1. In the **Baseline Sync** shortcut, open **Get Contents of URL** and change the URL to
    `https://<your-app>.vercel.app/api/ingest?token=<INGEST_TOKEN>`
@@ -57,7 +61,7 @@ Answers: `401` wrong token · `400` empty body (Request Body must be File) · `5
 
 ## Status
 - **Week 1 (done):** hosting, login, storage, data migration. Scores, charts, coaching and plans work as in the Claude version.
-- **Week 2:** iPhone Shortcut → `/api/ingest` with morning summary (done). Strava (own API app + webhook) still to do; until then Strava sync in the app doesn't work.
+- **Week 2:** iPhone Shortcut → `/api/ingest` with morning summary (done). AI via Hack Club (`/api/ai`, done). Strava (own API app + webhook) still to do; until then Strava sync in the app doesn't work.
 - **Week 3:** plan import polish, home-screen app, optional notifications.
 - **Week 4:** run both versions side by side, then switch.
 
@@ -65,6 +69,6 @@ Answers: `401` wrong token · `400` empty body (Request Body must be File) · `5
 - `public/index.html`: page shell and script order
 - `public/js/platform.js`: Supabase login + document storage (`docs` table)
 - `public/js/*.js`: the app (parsers, scoring model, insights, views)
-- `api/`: serverless functions (`ingest.js` runs the same scoring code as the browser, from `public/js`)
+- `api/`: serverless functions (`ingest.js` runs the same scoring code as the browser, from `public/js`; `ai.js` proxies Hack Club AI and holds the key)
 - `supabase/schema.sql`: database table and access rules
 - `scripts/import-export.mjs`: one-off import of the Claude-version export

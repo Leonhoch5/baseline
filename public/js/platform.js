@@ -87,11 +87,49 @@
   })();
 
   const userApi = Object.freeze({ isOwner: async () => true, canEdit: async () => true, can: async () => true, id: async () => user && user.id, me: async () => ({ id: user && user.id, name: '', email: user && user.email }) });
+
+  // ---- AI: the same `sample` interface the app used inside Claude, answered by Hack Club AI through /api/ai ----
+  window.BASELINE_AI = { name: 'Hack Club AI' };
+  const AI_IMG = { maxCount: 4, maxEdge: 1600, maxBytes: 1.5 * 1024 * 1024 };
+  async function blobToDataUrl(blob) {
+    // screenshots are downscaled to ≤ 1600 px JPEG so four of them fit in one request
+    const bmp = await createImageBitmap(blob).catch(() => null);
+    if (!bmp) return null;
+    const k = Math.min(1, AI_IMG.maxEdge / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height); bmp.close && bmp.close();
+    let q = 0.85, url = c.toDataURL('image/jpeg', q);
+    while (url.length > AI_IMG.maxBytes * 1.37 && q > 0.4) { q -= 0.15; url = c.toDataURL('image/jpeg', q); }
+    return url;
+  }
+  async function aiCall(input, opts) {
+    opts = opts || {};
+    await authReady;
+    const { data } = await sb.auth.getSession();
+    const token = data && data.session ? data.session.access_token : null;
+    if (!token) throw { code: 'ai_auth', message: 'not signed in' };
+    const images = [];
+    for (const b of opts.images || []) { const u = await blobToDataUrl(b); if (!u) throw { code: 'image_rejected', message: 'image could not be read' }; images.push(u); }
+    const body = { input, images, json: !!opts.json, model: opts.model || undefined, maxTokens: opts.maxTokens || undefined };
+    let r;
+    try { r = await fetch('/api/ai', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(body), signal: opts.signal }); }
+    catch (e) { if (e && e.name === 'AbortError') throw { code: 'cancelled', message: 'stopped' }; throw { code: 'unavailable', message: (e && e.message) || 'network error' }; }
+    const j = await r.json().catch(() => null);
+    if (!r.ok) { const err = (j && j.error) || {}; throw { code: err.code || (r.status === 413 ? 'prompt_too_large' : r.status === 429 ? 'rate_limited' : 'unavailable'), message: err.message || ('HTTP ' + r.status), retryAfter: err.retryAfter }; }
+    if (opts.onText && j.text) opts.onText({ text: j.text, delta: j.text });
+    return j;
+  }
+  const sample = Object.freeze(Object.assign(async (input, opts) => { const r = await aiCall(input, opts); return { text: r.text || '', truncated: r.finish === 'length', modelApplied: r.model }; }, {
+    json: async (input, opts) => { const r = await aiCall(input, { ...(opts || {}), json: true }); if (r.json == null) throw { code: 'invalid_json', message: 'no JSON in the answer', text: r.text }; return r.json; },
+    limits: async () => ({ images: { maxCount: AI_IMG.maxCount, maxBytes: AI_IMG.maxBytes, types: ['image/jpeg', 'image/png', 'image/webp'] } }),
+  }));
+
   window.claude = Object.freeze({
     use: async name => {
       if (name === 'db') { await authReady; return db; }
       if (name === 'user') { await authReady; return userApi; }
-      return null; // Strava and iPhone sync move to the server in week 2; plan conversion is on hold
+      if (name === 'sample') { await authReady; return sample; }
+      return null; // Strava and iPhone sync move to the server
     },
   });
   window.signOut = async () => { await sb.auth.signOut(); location.reload(); };

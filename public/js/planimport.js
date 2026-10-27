@@ -173,21 +173,24 @@ async function claudeSpec(text, images, start) {
   if (images && images.length) opts.images = images;
   const spec = await sample.json(planPrompt(text, start, todayYmd(), !!(images && images.length)), opts);
   if (!spec || typeof spec !== 'object' || (!Array.isArray(spec.phases) && !Array.isArray(spec.extras))) throw { code: 'invalid_json' };
-  spec.source = images && images.length ? 'screenshots, converted by Claude' : 'text, converted by Claude';
+  spec.source = images && images.length ? 'screenshots, converted by ' + aiName() : 'text, converted by ' + aiName();
   return spec;
 }
 function sampleErrorText(e) {
-  const c = e && e.code;
+  const c = e && e.code, ai = aiName();
   return {
-    unavailable: 'Converting with Claude only works with this page open inside Claude. You can still import a calendar (.ics) or spreadsheet (.csv), or send the plan to Claude in the chat.',
-    not_granted: 'Claude wasn’t allowed to run for this page. Allow it when asked and try again.',
-    sampling_disabled: 'Asking Claude from pages is turned off for your account.',
+    unavailable: ai === 'Claude' ? 'Converting with Claude only works with this page open inside Claude. You can still import a calendar (.ics) or spreadsheet (.csv).' : `${ai} isn’t reachable right now. Check the connection and try again, or import a calendar (.ics) or spreadsheet (.csv).`,
+    not_granted: `${ai} wasn’t allowed to run for this page. Allow it when asked and try again.`,
+    sampling_disabled: `Asking ${ai} from pages is turned off for your account.`,
     prompt_too_large: 'The plan is too long to convert in one go. Split it into two parts and add them as separate plans.',
-    rate_limited: 'Claude is busy. Wait a minute and try again.',
-    invalid_json: 'Claude’s answer couldn’t be read as a plan. Try again, or paste the plan as text.',
+    rate_limited: `${ai} is busy. Wait a minute and try again.`,
+    ai_budget: `${ai}’s daily budget is used up. It resets at midnight UTC.`,
+    ai_key: `${ai} isn’t set up on the server: the API key is missing or invalid (HACKCLUB_AI_KEY).`,
+    ai_auth: 'You need to be signed in to use the converter.',
+    invalid_json: `${ai}’s answer couldn’t be read as a plan. Try again, or paste the plan as text.`,
     images_unavailable: 'Images can’t be sent from this view. Paste the plan as text instead.',
     image_rejected: 'One of the images couldn’t be used. Try a smaller screenshot (JPEG or PNG).',
-    refused: 'Claude declined to convert this. Paste the plan as plain text and try again.',
+    refused: `${ai} declined to convert this. Paste the plan as plain text and try again.`,
     cancelled: 'Stopped.',
   }[c] || ('Conversion failed' + (e && e.message ? ': ' + e.message : '.'));
 }

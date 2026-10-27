@@ -673,14 +673,14 @@ function planImportHtml() {
       <p class="muted" style="font-size:12px;margin:10px 0 0">If another plan is still running on the start date, this one takes over from then on. You can delete a plan later.</p>
       <div class="row" style="margin-top:12px"><button class="btn primary" data-action="plan-save">Save plan</button><button class="btn ghost" data-action="plan-back">Start over</button><button class="btn ghost" data-action="plan-import-cancel">Cancel</button></div>`;
   } else {
-    body = `<p class="sub" style="margin:0 0 12px">Add the plan in any form. A calendar (.ics) or spreadsheet (.csv) with dates is read directly. Anything else (a Word file, pasted text, or screenshots of the plan) is converted by Claude, which takes about a minute.</p>
+    body = `<p class="sub" style="margin:0 0 12px">Add the plan in any form. A calendar (.ics) or spreadsheet (.csv) with dates is read directly. Anything else (a Word file, pasted text, or screenshots of the plan) is converted by ${esc(aiName())}, which takes about a minute.</p>
       <div class="cols" style="gap:14px"><div><label class="eyebrow" for="planStart">Start in the week of</label><input type="date" id="planStart" style="width:100%;margin-top:4px" value="${esc(I.start)}"></div>
         <div><label class="eyebrow" for="planName">Plan name (optional)</label><input type="text" id="planName" style="width:100%;margin-top:4px" value="${esc(I.name)}" placeholder="e.g. Olympic tri build 2027"></div></div>
       <label class="drop" id="planDrop" style="margin-top:14px"><input type="file" id="planFiles" multiple accept=".ics,.csv,.docx,.txt,.md,text/calendar,text/csv,text/plain,image/png,image/jpeg,image/heic,image/webp"><b>Choose files</b><span class="muted" style="font-size:12px">or drop them here · .ics · .csv · .docx · .txt · screenshots</span></label>
       ${I.files.length || I.images.length ? `<p class="muted" style="font-size:12px;margin:8px 0 0">Added: ${esc(I.files.join(', '))}</p>` : ''}
       <label class="eyebrow" for="planText" style="display:block;margin-top:14px">Or paste the plan</label>
       <textarea id="planText" style="min-height:140px;margin-top:4px" placeholder="Week 1: Mon swim 2000 m technique, Tue bike 60 min Z2…">${esc(I.text)}</textarea>
-      <div class="row" style="margin-top:12px">${I.busy ? `<button class="btn primary" disabled>Claude is converting the plan…</button><button class="btn ghost" data-action="plan-stop">Stop</button>` : `<button class="btn primary" data-action="plan-convert">Convert with Claude</button><button class="btn ghost" data-action="plan-import-cancel">Cancel</button>`}</div>`;
+      <div class="row" style="margin-top:12px">${I.busy ? `<button class="btn primary" disabled>${esc(aiName())} is converting the plan…</button><button class="btn ghost" data-action="plan-stop">Stop</button>` : `<button class="btn primary" data-action="plan-convert">Convert with ${esc(aiName())}</button><button class="btn ghost" data-action="plan-import-cancel">Cancel</button>`}</div>`;
   }
   return `<div class="panel" id="planImport"><div class="panel-h"><h2>Add a plan</h2>${I.preview ? '<span class="chip st-done">check and save</span>' : ''}</div>${I.error ? `<div class="notice err" style="margin-bottom:12px">${esc(I.error)}</div>` : ''}${body}</div>`;
 }
