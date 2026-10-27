@@ -154,3 +154,47 @@ function bodySignalsHtml(M, date, full) {
   return `<div class="panel bs ${b.level}"><div class="panel-h"><h2>${esc(head)}</h2>${full ? '<span class="aside">vs your last 28 nights</span>' : `<span class="aside"><button class="btn sm ghost" data-action="tab" data-tab="recovery">Details</button></span>`}</div>
     <p class="sub" style="margin:0 0 10px;font-size:13px">${esc(text)}</p>${full || b.level === 'alert' ? `<div class="bs-rows">${rows}</div>` : ''}</div>`;
 }
+
+// ---------- Coach panel: every session and the day judged against the plan and the goal ----------
+const GRADE_CHIP = { hit: ['As planned', 'st-done'], partial: ['Partly', 'st-partial'], miss: ['Off plan', 'st-missed'] };
+function reviewCardHtml(r) {
+  const s = r.session, v = r.review;
+  if (s && !v) {
+    const st = s.status;
+    const txt = st === 'missed' ? 'Not done. If it happened, it may not be on Strava yet.' : st === 'skipped' ? 'Optional, skipped.' : st === 'sick' ? 'Excused (sick).' : st === 'today' ? 'Planned for today.' : st === 'upcoming' ? 'Planned.' : s.checked ? 'Marked done by hand, so there is nothing to judge it on.' : '';
+    return `<div class="rv ${st}"><div class="rv-h"><span class="ic">${sportIcon(s.sportKey)}</span><b>${esc(s.title)}</b>${s.target ? `<span class="chip">${esc(s.target)}</span>` : ''}<span class="chip st-${st}">${esc(PLAN_STATUS[st] || st)}</span></div><p class="muted">${esc(txt)}</p></div>`;
+  }
+  const g = GRADE_CHIP[v.grade];
+  return `<div class="rv ${v.grade}"><div class="rv-h"><span class="ic">${sportIcon(s ? s.sportKey : v.sportKey)}</span><b>${esc(s ? s.title : v.title)}</b>${s && s.target ? `<span class="chip">${esc(s.target)}</span>` : ''}<span class="chip ${g[1]}">${v.unplanned ? esc(v.head) : g[0]}</span></div>
+    <p>${v.notes.join(' ')}</p>${v.goal ? `<p class="rv-goal">${v.goal}</p>` : ''}</div>`;
+}
+function weekProgressHtml(M, date) {
+  const wp = weekProgress(M, date);
+  const keys = Object.keys(wp.by).sort((a, b) => wp.by[b].planned - wp.by[a].planned);
+  if (!keys.length) return '';
+  const row = k => { const b = wp.by[k]; const pct = b.toDate ? Math.min(1, b.done / b.toDate) : 0; return `<div class="wk-row"><span>${esc(SPORT_LABEL[k] || k)}</span><div class="bar"><span style="width:${Math.round(pct * 100)}%;background:${pct >= 0.85 ? 'var(--rec-hi)' : pct >= 0.5 ? 'var(--rec-mid)' : 'var(--rec-lo)'}"></span></div><span class="val"><b>${Math.round(b.done)}</b> of ${b.toDate} min so far · ${b.planned} planned this week</span></div>`; };
+  const extra = Object.keys(wp.extra).map(k => `${esc(SPORT_LABEL[k] || k)} ${Math.round(wp.extra[k])} min`).join(', ');
+  return `<div class="wk"><div class="eyebrow" style="margin-bottom:6px">This week vs plan</div>${keys.map(row).join('')}${extra ? `<p class="muted" style="font-size:12px;margin:6px 0 0">Not in the plan: ${extra}.</p>` : ''}</div>`;
+}
+function coachNoteHtml(M, date) {
+  const n = coachNoteOf(date), busy = S.coachBusy === date;
+  const future = date > M.today;
+  if (future) return '';
+  const can = !!(window.claude && window.claude.use);
+  return `<div class="cn">${n ? `<div class="cn-h"><b>${esc(n.verdict || 'Coach’s note')}</b><span class="muted">${esc(aiName())} · ${esc(fmtDayShort(n.at ? n.at.slice(0, 10) : date))}</span></div><p>${esc(n.note)}</p>${n.tomorrow ? `<p><b>Tomorrow:</b> ${esc(n.tomorrow)}</p>` : ''}` : ''}
+    <div class="row">${busy ? `<button class="btn sm" disabled>${esc(aiName())} is writing…</button>` : `<button class="btn sm ${n ? 'ghost' : 'primary'}" data-action="coach-note" data-date="${date}" ${can ? '' : 'disabled'}>${n ? 'Write it again' : 'Write the coach’s note'}</button>`}${S.coachErr && S.coachErr.date === date ? `<span class="muted" style="font-size:12px">${esc(S.coachErr.text)}</span>` : ''}</div>
+    ${!n && !busy ? `<p class="muted" style="font-size:12px;margin:6px 0 0">A short written judgement of the day from ${esc(aiName())}, based only on the numbers above. Costs a fraction of a cent.</p>` : ''}</div>`;
+}
+function coachPanelHtmlV2(M, date) {
+  const dr = dayReview(M, date); if (!dr) return '';
+  const G = M.goals || goalsFor(M);
+  const next = G.races[0];
+  const goalLine = next ? `${esc(next.name)} in ${next.days} days${next.goal ? ': ' + esc(next.goal.length > 70 ? next.goal.slice(0, 70) + '…' : next.goal) : ''}` : 'No race in the plan yet.';
+  const strainTxt = dr.strain > 0 ? `Strain ${f1(dr.strain)} against a target of ${dr.target[0]}–${dr.target[1]}${dr.over ? ': over it' : dr.inBand ? ': in range' : date < M.today ? ': under it' : ' so far'}.` : date >= M.today && dr.planned ? `Nothing recorded yet. Strain target ${dr.target[0]}–${dr.target[1]}.` : '';
+  return `<div class="panel coach-v2"><div class="panel-h"><h2>Coach</h2><span class="chip ${dr.tone === 'good' ? 'hi' : dr.tone === 'warn' ? 'mid' : dr.tone === 'bad' ? 'lo' : ''}">${esc(dr.verdict)}</span><span class="aside">${goalLine}</span></div>
+    ${strainTxt ? `<p class="sub" style="margin:0 0 10px;font-size:13px">${strainTxt}</p>` : ''}
+    <div class="rvs">${dr.reviews.map(reviewCardHtml).join('') || '<p class="muted" style="margin:0">Nothing planned and nothing recorded.</p>'}</div>
+    ${weekProgressHtml(M, date)}
+    ${coachNoteHtml(M, date)}</div>`;
+}
+function coachNoteOf(date) { const m = date.slice(0, 7), doc = (cur().coach || {})[m]; return doc && doc.notes ? doc.notes[date] || null : null; }

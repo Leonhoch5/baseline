@@ -92,3 +92,6 @@ function zoneLabels(hrMax, bounds) {
 
 // name of whatever answers AI requests on this platform (Claude inside claude.ai; Hack Club AI in the standalone app)
 function aiName() { return (typeof window !== 'undefined' && window.BASELINE_AI && window.BASELINE_AI.name) || 'Claude'; }
+const REC_WORD = { hi: 'Green', mid: 'Yellow', lo: 'Red' };
+function f1(x) { return x == null ? '–' : x.toFixed(1); }
+function mondayOf(d) { return addDays(d, -((parseYmd(d).getDay() + 6) % 7)); }

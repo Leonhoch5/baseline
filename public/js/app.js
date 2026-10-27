@@ -1,5 +1,5 @@
 // ---------- app state, storage, actions ----------
-function emptyData() { return { apple: {}, strava: {}, journal: {}, planMeta: null, planSessions: [], planWeeks: [], plans: [], planChecks: {}, planEdits: {}, preds: {}, profile: {}, tests: { list: [] }, overlaps: { split: {} }, metaApple: null, metaStrava: null, metaDrive: null }; }
+function emptyData() { return { apple: {}, strava: {}, journal: {}, planMeta: null, planSessions: [], planWeeks: [], plans: [], planChecks: {}, planEdits: {}, preds: {}, coach: {}, profile: {}, tests: { list: [] }, overlaps: { split: {} }, metaApple: null, metaStrava: null, metaDrive: null }; }
 // five main sections; the leaf views inside them keep their own ids (used in links and the URL)
 const GROUPS = { today: ['today'], sleep: ['sleep'], training: ['strain', 'activities', 'plan', 'race'], trends: ['trends', 'recovery', 'model'], journal: ['journal'] };
 const NAV = ['today', 'sleep', 'training', 'trends', 'journal'];
@@ -7,11 +7,11 @@ const NAV_LABEL = { today: 'Today', sleep: 'Sleep', training: 'Training', trends
 const SUB_LABEL = { strain: 'Load', activities: 'Activities', plan: 'Plan', race: 'Race', trends: 'Trends', recovery: 'Recovery', model: 'How it works' };
 const TABS = [...Object.values(GROUPS).flat(), 'data'];
 function groupOf(t) { for (const g in GROUPS) if (GROUPS[g].includes(t)) return g; return t; }
-const COLLS = ['apple', 'strava', 'journal', 'planSessions', 'planWeeks', 'plans', 'plan', 'settings', 'meta', 'preds'];
+const COLLS = ['apple', 'strava', 'journal', 'planSessions', 'planWeeks', 'plans', 'plan', 'settings', 'meta', 'preds', 'coach'];
 const S = {
   tab: 'today', date: todayYmd(), jdate: addDays(todayYmd(), -1), range: 90, actFilter: 'all', actLimit: 30, ovlLimit: 8, planAll: false,
   sample: false, sampleData: null, real: emptyData(), model: null, db: null, dbMode: 'loading', loaded: {},
-  importing: null, stravaSync: null, driveSync: null, impMonths: 12, jdraft: {}, confirmDelete: false, owner: null, guideOpen: false, planSel: null, planImport: null, planDel: null, testForm: null, planEdit: null
+  importing: null, stravaSync: null, driveSync: null, impMonths: 12, jdraft: {}, confirmDelete: false, owner: null, guideOpen: false, planSel: null, planImport: null, planDel: null, testForm: null, planEdit: null, coachBusy: null, coachErr: null
 };
 function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } }
@@ -74,6 +74,7 @@ async function initDb() {
   sub('planSessions', docs => { S.real.planSessions = docs.map(d => ({ id: d.id, ...d.data() })); });
   sub('planWeeks', docs => { S.real.planWeeks = docs.map(d => ({ id: d.id, ...d.data() })); });
   sub('preds', docs => { const o = {}; docs.forEach(d => { o[d.id] = d.data(); }); S.real.preds = o; });
+  sub('coach', docs => { const o = {}; docs.forEach(d => { o[d.id] = d.data(); }); S.real.coach = o; });
   sub('plans', docs => { S.real.plans = docs.map(d => ({ ...d.data(), id: d.id })); });
   sub('plan', docs => { const m = docs.find(d => d.id === 'meta'), c = docs.find(d => d.id === 'checks'), ed = docs.find(d => d.id === 'edits'); S.real.planMeta = m ? m.data() : null; S.real.planChecks = c ? c.data() : {}; S.real.planEdits = ed ? ed.data() : {}; });
   sub('settings', docs => { const p = docs.find(d => d.id === 'profile'), o = docs.find(d => d.id === 'overlaps'), t = docs.find(d => d.id === 'tests'); S.real.tests = t ? t.data() : { list: [] }; S.real.profile = p ? p.data() : {}; S.real.overlaps = o ? o.data() : { split: {} }; });
@@ -101,6 +102,7 @@ async function writeDoc(path, data) {
   else if (path === 'plan/checks') S.real.planChecks = data;
   else if (path === 'plan/edits') S.real.planEdits = data;
   else if (coll === 'preds') S.real.preds = { ...(S.real.preds || {}), [id]: data };
+  else if (coll === 'coach') S.real.coach = { ...(S.real.coach || {}), [id]: data };
   else if (coll === 'planWeeks') { S.real.planWeeks = S.real.planWeeks.filter(w => w.id !== id).concat([{ ...data, id }]); }
   else if (coll === 'plans') { S.real.plans = S.real.plans.filter(x => x.id !== id).concat([{ ...data, id }]); }
 }
@@ -371,6 +373,20 @@ async function saveOverlaps(split) {
 // ---- actions ----
 const ACTIONS = {
   tab: b => setTab(b.dataset.tab),
+  'coach-note': async b => {
+    const date = b.dataset.date, M = S.model; if (!M || S.coachBusy) return;
+    S.coachBusy = date; S.coachErr = null; render();
+    try {
+      const sample = window.claude && window.claude.use ? await window.claude.use('sample') : null;
+      if (!sample) throw { code: 'unavailable' };
+      const out = await sample.json(coachNotePrompt(M, date), { modelTier: 'default', cache: false });
+      if (!out || typeof out !== 'object' || !out.note) throw { code: 'invalid_json' };
+      const note = { verdict: String(out.verdict || '').slice(0, 60), note: String(out.note).slice(0, 900), tomorrow: String(out.tomorrow || '').slice(0, 240), at: new Date().toISOString(), by: aiName() };
+      const m = date.slice(0, 7), D = cur(), doc = { ...((D.coach || {})[m] || { notes: {} }) }; doc.notes = { ...(doc.notes || {}), [date]: note };
+      if (S.sample) { S.sampleData.coach = { ...(S.sampleData.coach || {}), [m]: doc }; } else await writeDoc('coach/' + m, doc);
+    } catch (e) { console.warn(e); S.coachErr = { date, text: sampleErrorText(e) }; }
+    S.coachBusy = null; render();
+  },
   'test-del': b => saveTests(((cur().tests && cur().tests.list) || []).filter(t => t.id !== b.dataset.id)),
   'test-open': b => {
     const s = S.model && S.model.plan.sessions.find(x => x.id === b.dataset.session);

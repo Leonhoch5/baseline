@@ -197,6 +197,12 @@ function buildModel(D) {
       else if (act.re != null && act.re > 0) { est = act.re * 2.4; basis = 'Strava relative effort'; }
       else { est = durMin * (LOAD_PER_MIN[act.sport] ?? 1.5); basis = 'duration and sport'; }
       act.load = est; act.strain = strainOf(est); act.loadBasis = basis; act.covered = covered;
+      // an activity covered by the Watch's all-day curve gets its HR profile from those 5-minute slots (histogram in seconds, like hb)
+      if (covered && !act.hb && si.s0 != null) {
+        const hbS = new Array(HB_BINS).fill(0); let sum = 0, n = 0, mx = 0;
+        for (let k = si.s0; k <= si.s1; k++) { const v = parseInt(a.hr5.substr(k * 2, 2), 16); if (!v) continue; const bi = Math.floor((v - HB_BASE) / 5); if (bi >= 0) hbS[Math.min(HB_BINS - 1, bi)] += 300; sum += v; n++; if (v > mx) mx = v; }
+        if (n >= 2) { act.hb = hbS; act.hrFrom = 'Apple Watch (all-day curve)'; if (act.avgHr == null) act.avgHr = Math.round(sum / n); if (act.maxHr == null) act.maxHr = mx; }
+      }
       if (!covered) {
         const already = si.s0 != null ? slotLoad(a, si.s0, si.s1, hrMax) : 0;
         const add = Math.max(0, est - already); extra += add; act.addedLoad = add;

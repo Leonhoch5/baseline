@@ -469,3 +469,25 @@ fieldset.wd input { width: auto; margin: 0; accent-color: var(--accent); }
 .dist { display: flex; height: 12px; border-radius: 6px; overflow: hidden; gap: 2px; margin: 6px 0 4px; }
 .dist span { display: block; min-width: 0; } .dist .hi { background: var(--rec-hi); } .dist .mid { background: var(--rec-mid); } .dist .lo { background: var(--rec-lo); }
 input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+
+/* ---- coach ---- */
+.rvs { display: grid; gap: 8px; }
+.rv { padding: 10px 12px; border-radius: var(--r-sm); background: var(--panel-2); border-left: 3px solid var(--line); font-size: 13px; }
+.rv.hit { border-left-color: var(--rec-hi); } .rv.partial { border-left-color: var(--rec-mid); } .rv.miss { border-left-color: var(--rec-lo); }
+.rv.missed { border-left-color: var(--rec-lo); } .rv.today, .rv.upcoming { border-left-color: var(--accent); }
+.rv-h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.rv-h b { font-size: 15px; }
+.rv-h .ic { width: 24px; height: 24px; border-radius: 50%; background: var(--accent-soft); display: grid; place-items: center; flex: none; }
+.rv-h .ic svg { width: 14px; height: 14px; fill: none; stroke: var(--accent); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.rv-h .chip:last-child { margin-left: auto; }
+.rv p { margin: 0; color: var(--fg-2); }
+.rv .rv-goal { margin-top: 4px; color: var(--fg); }
+.wk { margin-top: 12px; }
+.wk-row { display: grid; grid-template-columns: 70px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 13px; padding: 3px 0; }
+.wk-row .bar { height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; } .wk-row .bar span { display: block; height: 100%; border-radius: 4px; }
+.wk-row .val { color: var(--fg-2); font-size: 12px; } .wk-row .val b { color: var(--fg); }
+.cn { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.cn-h { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-bottom: 4px; }
+.cn-h b { font-size: 15px; } .cn-h .muted { font-size: 12px; }
+.cn p { margin: 0 0 8px; font-size: 14px; color: var(--fg); }
+@media (max-width: 560px) { .wk-row { grid-template-columns: 60px minmax(0, 1fr); } .wk-row .val { grid-column: 2; } }

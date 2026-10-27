@@ -27,9 +27,7 @@ SPORT_IC.hike = SPORT_IC.walk;
 function icon(p) { return `<svg viewBox="0 0 24 24" aria-hidden="true">${p}</svg>`; }
 function sportIcon(s) { return icon(SPORT_IC[s] || IC.activities); }
 const REC_COLOR = { hi: 'var(--rec-hi)', mid: 'var(--rec-mid)', lo: 'var(--rec-lo)' };
-const REC_WORD = { hi: 'Green', mid: 'Yellow', lo: 'Red' };
 function recColor(r) { const z = recoveryZone(r); return z ? REC_COLOR[z] : 'var(--muted)'; }
-function f1(x) { return x == null ? '–' : x.toFixed(1); }
 function pct(x) { return x == null ? '–' : Math.round(x * 100) + '%'; }
 function srcBadges(a) {
   return a.sources.map(s => `<span class="src ${s === 'Strava' ? 'strava' : s === 'Apple Watch' ? 'watch' : 'health'}"><i></i>${esc(s)}</span>`).join('');
@@ -44,7 +42,7 @@ function actRow(a, M, showDate) {
     <div class="ic">${sportIcon(a.sport)}</div>
     <div style="min-width:0"><div class="n">${esc(a.name)}</div>
       <div class="m">${showDate ? `<span>${fmtDay(a.date)}</span>` : ''}${meta.map(m => `<span>${esc(m)}</span>`).join('')}</div>
-      <div class="m" style="margin-top:4px">${srcBadges(a)}${a.merged ? '<span class="chip" title="Recorded by more than one source and merged">merged</span>' : ''}</div>
+      <div class="m" style="margin-top:4px">${srcBadges(a)}${a.merged ? '<span class="chip" title="Recorded by more than one source and merged">merged</span>' : ''}${actGradeChip(M, a)}</div>
       ${zoneBar(a.hb, M.prof.hrMax, M.prof.zones)}
     </div>
     <div class="r"><span class="pill" title="Strain (based on ${esc(a.loadBasis || '')})">${f1(a.strain)}</span></div>
@@ -98,7 +96,7 @@ VIEWS.today = (v) => {
     v.innerHTML = sickTodayHtml(M) + (S.planEdit && S.planEdit.mode === 'sick' ? planEditFormHtml(M) : '') + `<div class="panel coach"><div><div class="eyebrow">${S.date === M.today ? "Today's plan" : 'Plan for ' + esc(fmtDay(S.date))}</div><h2>${esc(c.head)}</h2><p>${esc(c.body)}</p>${plannedListHtml(c, M)}${S.date === M.today && !c.sick && !S.planEdit ? '<button class="btn sm ghost" style="margin-top:10px" data-action="pe-open" data-mode="sick">Feeling sick or injured?</button>' : ''}</div>
       <div><div class="eyebrow">Strain target</div><p class="muted" style="font-size:13px;margin:8px 0 0">${c.target[0]}–${c.target[1]} on the 0–21 scale. It narrows once your recovery score is available.</p></div></div>
       <div class="panel"><div class="panel-h"><h2>No Watch data for this day yet</h2></div><p class="sub" style="margin:0 0 12px">Heart rate, sleep and HRV arrive when the iPhone Shortcut syncs; workouts arrive from Strava.</p>
-      <div class="row"><button class="btn" data-action="drive-sync">Check iPhone data now</button><button class="btn ghost" data-action="tab" data-tab="data">Sync settings</button></div><div id="driveStatus" style="margin-top:10px">${driveStatusHtml(S.driveSync)}</div></div>` + testDueNoticeHtml(M) + coachPanelHtml(M, S.date);
+      <div class="row"><button class="btn" data-action="drive-sync">Check iPhone data now</button><button class="btn ghost" data-action="tab" data-tab="data">Sync settings</button></div><div id="driveStatus" style="margin-top:10px">${driveStatusHtml(S.driveSync)}</div></div>` + coachPanelHtmlV2(M, S.date) + testDueNoticeHtml(M) + coachPanelHtml(M, S.date);
     return;
   }
   const z = recoveryZone(d.rec), coach = coachFor(d, M);
@@ -127,6 +125,7 @@ VIEWS.today = (v) => {
       <p class="muted" style="font-size:12px;margin:10px 0 0">The shaded band is the strain range that fits ${d.rec != null ? 'a ' + REC_WORD[z].toLowerCase() + ' recovery' : 'an average day'}: ${lo}–${hi}. ${st >= hi ? 'You have reached it.' : st >= lo ? 'You are in range.' : `About ${f1(lo - st)} more to reach it.`}</p>
     </div>
   </div>
+  ${coachPanelHtmlV2(M, S.date)}
   ${testDueNoticeHtml(M)}
   ${coachPanelHtml(M, S.date)}
   ${bodySignalsHtml(M, S.date)}
@@ -419,7 +418,6 @@ VIEWS.journal = (v) => {
 };
 
 const PLAN_STATUS = { done: 'done', partial: 'cut short', missed: 'missed', skipped: 'skipped', today: 'today', upcoming: 'planned', rest: 'rest', sick: 'sick' };
-function mondayOf(d) { return addDays(d, -((parseYmd(d).getDay() + 6) % 7)); }
 VIEWS.plan = (v) => {
   const M = S.model; const P = M ? M.plan : { sessions: [], weeks: [], plans: [] };
   if (!P.sessions.length) {
@@ -725,4 +723,12 @@ function testDueNoticeHtml(M) {
   const due = R.sched.due.filter(({ s }) => daysBetween(s.date, M.today) <= 7 && s.date !== S.date);
   if (!due.length) return '';
   return `<div class="notice" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1 1 220px">${due.length === 1 ? `Your <b>${esc(due[0].s.title)}</b> on ${esc(fmtDayShort(due[0].s.date))} has no result yet.` : `${due.length} planned tests have no result yet.`}</span><button class="btn sm primary" data-action="test-open" data-type="${due[0].type}" data-date="${due[0].s.date}" data-session="${esc(due[0].s.id)}">Enter result</button></div>`;
+}
+
+// grade chip for an activity that fulfilled a planned session (Coach panel has the detail)
+function actGradeChip(M, a) {
+  const s = M.plan && M.plan.sessions.find(x => x.match && x.match.gid === a.gid); if (!s) return '';
+  M._rv = M._rv || {}; const r = M._rv[a.gid] || (M._rv[a.gid] = reviewSession(M, s)); if (!r) return '';
+  const g = GRADE_CHIP[r.grade];
+  return `<span class="chip ${g[1]}" title="${esc(r.notes.join(' ').replace(/<[^>]+>/g, ''))}">${esc(s.title)}: ${g[0].toLowerCase()}</span>`;
 }

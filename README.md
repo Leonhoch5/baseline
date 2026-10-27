@@ -19,7 +19,7 @@ Static front end (`public/`) + Vercel serverless functions (`api/`) + Supabase (
    - `SUPABASE_URL` = Project URL
    - `SUPABASE_ANON_KEY` = anon public key
 3. Deploy. Check `https://<your-app>.vercel.app/api/health` returns `{"ok":true}`.
-4. For AI features (plan conversion from text, Word files or screenshots) add:
+4. For AI features (plan conversion from text, Word files or screenshots, and the daily coach's note) add:
    - `HACKCLUB_AI_KEY` = your Hack Club AI key (https://ai.hackclub.com/dashboard). It stays on the server; `/api/ai` only answers signed-in requests.
    - optional `HACKCLUB_AI_MODEL` (default `anthropic/claude-haiku-5.5`, cheap and reads screenshots) and `HACKCLUB_AI_FALLBACKS`.
    Hack Club AI has a $3/day budget per key; a plan conversion costs well under a cent.
