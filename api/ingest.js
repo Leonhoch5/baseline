@@ -5,12 +5,13 @@
 // GET  /api/ingest?token=…  → only the summary (for a second "morning check" shortcut).
 // Add ?format=json for a JSON answer.
 //
-// Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, INGEST_TOKEN, and BASELINE_USER_ID or USER_EMAIL.
-// Optional: BASELINE_TZ (default Europe/Berlin). The scoring code is the same file the browser runs (public/js).
+// Env: INGEST_TOKEN and the Blob store (BLOB_READ_WRITE_TOKEN). Optional: BASELINE_TZ (default Europe/Berlin).
+// The scoring code is the same file the browser runs (public/js).
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
-import crypto from 'node:crypto';
+import { ingestTokenOk } from '../lib/auth.js';
+import { readAll, writeMany } from '../lib/store.js';
 
 process.env.TZ = process.env.BASELINE_TZ || 'Europe/Berlin'; // the app works in local wall-clock time
 
@@ -25,44 +26,14 @@ export function loadEngine(dir = path.join(process.cwd(), 'public', 'js')) {
   return ctx;
 }
 
-// ---- Supabase REST (service role: bypasses row-level security, so every query filters on the user) ----
-function sbHeaders(extra) {
-  const k = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  return { apikey: k, Authorization: 'Bearer ' + k, 'Content-Type': 'application/json', ...(extra || {}) };
+// rows [{coll, id, data}] from the stored collections
+export async function loadDocs() {
+  const all = await readAll();
+  const rows = [];
+  for (const coll of Object.keys(all)) for (const id of Object.keys(all[coll])) rows.push({ coll, id, data: all[coll][id] });
+  return rows;
 }
-async function sbFetch(p, init) {
-  const r = await fetch(process.env.SUPABASE_URL.replace(/\/$/, '') + p, { ...init, headers: sbHeaders(init && init.headers) });
-  if (!r.ok) throw new Error(`Supabase ${r.status}: ${(await r.text()).slice(0, 200)}`);
-  const t = await r.text();
-  return t ? JSON.parse(t) : null;
-}
-let cachedUser = null;
-async function userId() {
-  if (process.env.BASELINE_USER_ID) return process.env.BASELINE_USER_ID;
-  if (cachedUser) return cachedUser;
-  const email = String(process.env.USER_EMAIL || '').toLowerCase();
-  if (!email) throw new Error('Set BASELINE_USER_ID or USER_EMAIL');
-  for (let page = 1; page <= 10; page++) {
-    const r = await sbFetch(`/auth/v1/admin/users?page=${page}&per_page=100`);
-    const u = (r.users || []).find(x => String(x.email || '').toLowerCase() === email);
-    if (u) return (cachedUser = u.id);
-    if (!r.users || r.users.length < 100) break;
-  }
-  throw new Error('No Supabase user with USER_EMAIL');
-}
-export async function loadDocs(uid) {
-  const out = [];
-  for (let from = 0; ; from += 1000) {
-    const rows = await sbFetch(`/rest/v1/docs?user_id=eq.${encodeURIComponent(uid)}&select=coll,id,data&order=coll,id`, { headers: { Range: `${from}-${from + 999}`, 'Range-Unit': 'items' } });
-    out.push(...rows); if (rows.length < 1000) break;
-  }
-  return out;
-}
-async function upsert(uid, rows) {
-  if (!rows.length) return;
-  const now = new Date().toISOString();
-  await sbFetch('/rest/v1/docs?on_conflict=user_id,coll,id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(rows.map(r => ({ user_id: uid, coll: r.coll, id: r.id, data: r.data, updated_at: now }))) });
-}
+async function upsert(rows) { if (rows.length) await writeMany(rows); }
 
 // same shape the browser app builds from its collections (app.js initDb)
 export function docsToData(rows) {
@@ -104,13 +75,6 @@ async function readBody(req) {
   else if (/multipart\/form-data/i.test(type)) { const m = s.match(/name="(?:data|file|text)"[^\r\n]*\r\n(?:[^\r\n]+\r\n)*\r\n([\s\S]*?)\r\n--/); s = m ? m[1] : ''; }
   return s;
 }
-function tokenOk(given) {
-  const want = process.env.INGEST_TOKEN || '';
-  if (want.length < 16) return false; // refuse to run without a real secret
-  const a = Buffer.from(String(given || '')), b = Buffer.from(want);
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
-}
-
 export default async function handler(req, res) {
   const url = new URL(req.url, 'http://x');
   const send = (status, obj) => {
@@ -119,17 +83,17 @@ export default async function handler(req, res) {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     return res.status(status).send(obj.error ? 'Baseline: ' + obj.error : obj.title + '\n' + obj.body);
   };
-  if (!tokenOk(url.searchParams.get('token') || req.headers['x-baseline-token'])) return send(401, { error: 'wrong or missing token' });
+  if (!ingestTokenOk(url.searchParams.get('token') || req.headers['x-baseline-token'])) return send(401, { error: 'wrong or missing token' });
   try {
-    const E = loadEngine(), uid = await userId();
-    const D = docsToData(await loadDocs(uid));
+    const E = loadEngine();
+    const D = docsToData(await loadDocs());
     let saved = null;
     if (req.method === 'POST') {
       const text = await readBody(req);
       if (!text || !text.trim()) return send(400, { error: 'empty body. In the Shortcut, set Request Body to File and pick the final Text.' });
       const { r, months, docs } = ingestText(E, D, text);
       const meta = { lastSync: new Date().toISOString(), files: (D.metaDrive && D.metaDrive.files) || {}, last: { file: 'iPhone (direct)', at: new Date().toISOString(), counts: r.counts, warnings: r.warnings.slice(0, 4) }, via: 'ingest' };
-      await upsert(uid, months.map(m => ({ coll: 'apple', id: m, data: docs[m] })).concat([{ coll: 'meta', id: 'gdrive', data: meta }]));
+      await upsert(months.map(m => ({ coll: 'apple', id: m, data: docs[m] })).concat([{ coll: 'meta', id: 'gdrive', data: meta }]));
       saved = { months, counts: r.counts, warnings: r.warnings.slice(0, 4) };
     } else if (req.method !== 'GET') return send(405, { error: 'use POST (sync) or GET (summary)' });
     const sum = summarize(E, D);

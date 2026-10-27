@@ -1,14 +1,13 @@
 // AI for Baseline, served by Hack Club AI (https://docs.ai.hackclub.com, OpenAI-compatible).
 // The API key lives only here (env HACKCLUB_AI_KEY); the browser never sees it.
 //
-// POST /api/ai  (signed-in user only: Authorization: Bearer <Supabase access token>)
+// POST /api/ai  (signed-in user only: Authorization: Bearer <session token from /api/login>, or ?token=INGEST_TOKEN)
 //   body: { input: string | [{role, content}], images?: [dataURL…], json?: boolean, model?, maxTokens?, temperature? }
 //   → { text, json?, model, usage }     errors: { error: { code, message, retryAfter? } }
 //
-// Env: HACKCLUB_AI_KEY (required), SUPABASE_URL, SUPABASE_ANON_KEY, and USER_EMAIL or BASELINE_USER_ID (who may call it).
-// Optional: HACKCLUB_AI_MODEL (default anthropic/claude-haiku-5.5), HACKCLUB_AI_FALLBACKS (comma list), AI_BASE_URL,
-//           INGEST_TOKEN (lets the iPhone Shortcut call it with ?token=…).
-import crypto from 'node:crypto';
+// Env: HACKCLUB_AI_KEY (required). Optional: HACKCLUB_AI_MODEL (default anthropic/claude-haiku-5.5),
+//      HACKCLUB_AI_FALLBACKS (comma list), AI_BASE_URL.
+import { callerOk } from '../lib/auth.js';
 
 const BASE = (process.env.AI_BASE_URL || 'https://ai.hackclub.com/proxy/v1').replace(/\/$/, '');
 const DEFAULT_MODEL = process.env.HACKCLUB_AI_MODEL || 'anthropic/claude-haiku-5.5';
@@ -16,25 +15,6 @@ const FALLBACKS = (process.env.HACKCLUB_AI_FALLBACKS || 'openai/gpt-6-luna,googl
 const MAX_BODY = 4 * 1024 * 1024, MAX_IMAGES = 4, MAX_TOKENS = 8000;
 
 export const config = { api: { bodyParser: { sizeLimit: '4mb' } } };
-
-function tokenOk(given) {
-  const want = process.env.INGEST_TOKEN || '';
-  if (want.length < 16 || !given) return false;
-  const a = Buffer.from(String(given)), b = Buffer.from(want);
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
-}
-// the signed-in Baseline user, checked against Supabase with the token the browser sends
-async function callerOk(req) {
-  const h = String(req.headers.authorization || '');
-  const jwt = h.startsWith('Bearer ') ? h.slice(7).trim() : '';
-  if (!jwt) return false;
-  const r = await fetch(process.env.SUPABASE_URL.replace(/\/$/, '') + '/auth/v1/user', { headers: { apikey: process.env.SUPABASE_ANON_KEY, Authorization: 'Bearer ' + jwt } });
-  if (!r.ok) return false;
-  const u = await r.json().catch(() => null); if (!u || !u.id) return false;
-  if (process.env.BASELINE_USER_ID) return u.id === process.env.BASELINE_USER_ID;
-  if (process.env.USER_EMAIL) return String(u.email || '').toLowerCase() === String(process.env.USER_EMAIL).toLowerCase();
-  return true;   // no allow-list configured: any signed-in user of this deployment (there is only one)
-}
 
 // OpenAI-style messages from the app's input (a prompt string or a short chat), with images on the last user turn
 export function buildMessages(input, images) {
@@ -79,9 +59,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return fail(405, 'method', 'use POST');
   if (!process.env.HACKCLUB_AI_KEY) return fail(503, 'ai_key', 'HACKCLUB_AI_KEY is not set on the server');
   try {
-    const url = new URL(req.url, 'http://x');
-    const allowed = tokenOk(url.searchParams.get('token') || req.headers['x-baseline-token']) || await callerOk(req);
-    if (!allowed) return fail(401, 'ai_auth', 'sign in first');
+    if (!callerOk(req)) return fail(401, 'ai_auth', 'sign in first');
     let b = req.body; if (typeof b === 'string') { try { b = JSON.parse(b); } catch (e) { return fail(400, 'bad_request', 'body is not JSON'); } }
     if (!b || typeof b !== 'object') return fail(400, 'bad_request', 'missing body');
     if (JSON.stringify(b).length > MAX_BODY) return fail(413, 'prompt_too_large', 'request too large');

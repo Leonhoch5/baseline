@@ -18,6 +18,9 @@
     },
     "api/ai.js": {
       "maxDuration": 60
+    },
+    "api/db.js": {
+      "maxDuration": 30
     }
   }
 }
