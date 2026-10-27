@@ -6,7 +6,7 @@
 //   POST /api/db  { op: 'batch', writes: [{ coll, id, data|null }, …] } → { ok: true, written: { coll: n } }
 // Auth: Authorization: Bearer <session token from /api/login>, or ?token=INGEST_TOKEN (used by the import script).
 import { callerOk } from '../lib/auth.js';
-import { COLLS, readAll, readColl, writeDoc, deleteDoc, writeMany, checkName, etagTest } from '../lib/store.js';
+import { COLLS, readAll, readColl, writeDoc, deleteDoc, writeMany, checkName, selfTest } from '../lib/store.js';
 
 export const config = { api: { bodyParser: { sizeLimit: '4mb' } } };
 
@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     if (!callerOk(req)) return fail(401, 'unauthenticated', 'sign in first');
     const url = new URL(req.url, 'http://x');
     if (req.method === 'GET') {
-      if (url.searchParams.get('op') === 'etagtest') return send(200, await etagTest());
+      if (url.searchParams.get('op') === 'selftest' && callerOk(req) === 'ingest') return send(200, await selfTest());
       const one = url.searchParams.get('coll');
       if (one) return send(200, { docs: (await readColl(checkName(one, 'collection'))).docs });
       const colls = (url.searchParams.get('colls') || '').split(',').map(s => s.trim()).filter(Boolean);
