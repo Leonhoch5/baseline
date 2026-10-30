@@ -139,6 +139,19 @@
     limits: async () => ({ images: { maxCount: AI_IMG.maxCount, maxBytes: AI_IMG.maxBytes, types: ['image/jpeg', 'image/png', 'image/webp'] } }),
   }));
 
+  // ---- Strava: the server holds the connection (own API app); the page only asks it to connect, sync, or switch live updates ----
+  const J = { 'Content-Type': 'application/json' };
+  window.BASELINE_STRAVA = Object.freeze({
+    status: () => api('/api/strava/status'),
+    connect: async () => { const j = await api('/api/strava/connect', { method: 'POST', headers: J, body: '{}' }); location.href = j.url; },
+    sync: (full, months) => api('/api/strava/sync', { method: 'POST', headers: J, body: JSON.stringify({ full: !!full, months: months || undefined }) }),
+    subscribe: on => api('/api/strava/subscribe', { method: 'POST', headers: J, body: JSON.stringify({ on: !!on }) }),
+    disconnect: () => api('/api/strava/disconnect', { method: 'POST', headers: J, body: '{}' }),
+    reload: async () => { (await loadAll()).forEach(notify); },
+  });
+
+  window.BASELINE_SERVER = Object.freeze({ info: () => api('/api/db?op=info') });
+
   window.claude = Object.freeze({
     use: async name => {
       if (name === 'db') { await authReady; return db; }

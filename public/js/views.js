@@ -519,9 +519,9 @@ VIEWS.data = (v) => {
       ${mA && !mA.sample ? `<p class="muted" style="font-size:12px;margin:12px 0 0">${esc(fmtDayShort(mA.from || ''))} – ${esc(fmtDayShort(mA.to || ''))} · ${(mA.hrSamples || 0).toLocaleString()} heart-rate readings · ${mA.nights || 0} nights · ${mA.workouts || 0} workouts</p>` : ''}
     </div>
     <div class="panel"><div class="panel-h"><h2>Strava</h2><span class="aside">${mS && mS.lastSync ? 'Synced ' + esc(new Date(mS.lastSync).toLocaleString()) : mS && mS.csvAt ? 'File imported ' + esc(new Date(mS.csvAt).toLocaleString()) : 'Not connected yet'}</span></div>
-      <p class="sub" style="margin:0 0 12px">Live sync uses your Strava connector in Claude. Activities come in with name, distance and elevation, and heart rate for workouts your Watch didn't record.</p>
+      ${window.BASELINE_STRAVA ? stravaServerHtml(mS, sync) : `<p class="sub" style="margin:0 0 12px">Live sync uses your Strava connector in Claude. Activities come in with name, distance and elevation, and heart rate for workouts your Watch didn't record.</p>
       <div class="row"><button class="btn primary" data-action="strava-sync" ${sync && sync.running ? 'disabled' : ''}>${sync && sync.running ? 'Syncing…' : mS && mS.lastSync ? 'Sync now' : 'Connect and sync'}</button>${mS && mS.lastSync ? `<button class="btn ghost" data-action="strava-full" ${sync && sync.running ? 'disabled' : ''}>Re-sync full history</button>` : ''}</div>
-      <div id="syncStatus" style="margin-top:12px">${syncStatusHtml(sync)}</div>
+      <div id="syncStatus" style="margin-top:12px">${syncStatusHtml(sync)}</div>`}
       <details style="margin-top:14px"><summary class="muted" style="cursor:pointer;font-size:13px">Import a Strava export file instead</summary>
         <p class="muted" style="font-size:12px">On strava.com: Settings → My Account → Download or Delete Your Account → Request your archive. Drop the zip (or its activities.csv) here.</p>
         <label class="drop"><input type="file" id="fileStrava" accept=".zip,.csv,application/zip,text/csv"><b>Choose Strava export</b><span class="muted" style="font-size:12px">zip or activities.csv</span></label></details>
@@ -564,6 +564,27 @@ function importStatusHtml(imp) {
   const frac = imp.phase === 'read' ? (imp.frac || 0) * 0.8 : imp.phase === 'crunch' ? 0.85 : imp.phase === 'save' ? 0.85 + 0.15 * ((imp.saved || 0) / (imp.total || 1)) : 0;
   return `<div style="display:grid;gap:6px"><span style="font-size:13px">${label}</span><div class="progress"><span style="width:${(frac * 100).toFixed(1)}%"></span></div></div>`;
 }
+// Strava in the standalone: the server holds the connection (own API app), so this panel manages connect / sync / live updates
+function stravaServerHtml(mS, sync) {
+  const SV = window.BASELINE_STRAVA, st = S.stravaStatus;
+  if (!st && !S.stravaStatusLoading) { S.stravaStatusLoading = true; SV.status().then(j => { S.stravaStatus = j; }).catch(e => { S.stravaStatus = { error: humanError(e) }; }).finally(() => { S.stravaStatusLoading = false; if (S.tab === 'data') render(); }); }
+  const notice = S.stravaNotice ? `<div class="notice ${S.stravaNotice.ok ? '' : 'err'}" style="margin-bottom:12px">${esc(S.stravaNotice.text)}</div>` : '';
+  if (!st) return notice + '<p class="muted">Checking the Strava connection…</p>';
+  if (st.error) return notice + `<div class="notice err">${esc(st.error)}</div>`;
+  const busy = sync && sync.running;
+  if (!st.configured) return notice + `<p class="sub" style="margin:0 0 10px">Strava needs an API app of your own (free, two minutes):</p>
+    <ol class="steps"><li>Open <b>strava.com/settings/api</b> and create an app: any name, category <i>Training</i>, website <code>https://${esc(st.callbackDomain)}</code>, <b>Authorization Callback Domain</b> <code>${esc(st.callbackDomain)}</code>.</li>
+    <li>In Vercel → this project → Settings → Environment Variables add <code>STRAVA_CLIENT_ID</code> and <code>STRAVA_CLIENT_SECRET</code> from that page${st.missing.includes('STRAVA_VERIFY_TOKEN') ? ', plus <code>STRAVA_VERIFY_TOKEN</code> (any random text, 8+ characters)' : ''}, then redeploy.</li></ol>
+    <p class="muted" style="font-size:12px">Missing now: ${esc(st.missing.join(', '))}.</p>`;
+  if (!st.connected) return notice + `<p class="sub" style="margin:0 0 12px">Connect your Strava account once. Activities then come in with name, distance and elevation, and heart rate for workouts your Watch didn't record.</p>
+    <div class="row"><button class="btn primary" data-action="strava-connect">Connect Strava</button></div><div id="syncStatus" style="margin-top:12px">${syncStatusHtml(sync)}</div>`;
+  const wh = st.webhook || {};
+  return notice + `<p class="sub" style="margin:0 0 12px">Connected as <b>${esc((st.athlete && st.athlete.name) || 'your Strava account')}</b>${st.count ? ` · ${st.count} activities in the last sync` : ''}.</p>
+    <div class="row"><button class="btn primary" data-action="strava-sync" ${busy ? 'disabled' : ''}>${busy ? 'Syncing…' : 'Sync now'}</button><button class="btn ghost" data-action="strava-full" ${busy ? 'disabled' : ''}>Re-sync full history</button><button class="btn ghost" data-action="strava-disconnect" ${busy ? 'disabled' : ''}>Disconnect</button></div>
+    <div id="syncStatus" style="margin-top:12px">${syncStatusHtml(sync)}</div>
+    <div class="row" style="margin-top:14px;align-items:center;gap:10px"><span class="chip ${wh.active ? 'hi' : ''}"><i></i>Live updates ${wh.active ? 'on' : 'off'}</span><button class="btn sm ${wh.active ? 'ghost' : ''}" data-action="strava-webhook" data-on="${wh.active ? '0' : '1'}">${wh.active ? 'Turn off' : 'Turn on'}</button></div>
+    <p class="muted" style="font-size:12px;margin:6px 0 0">${wh.active ? 'Strava tells Baseline when you finish, edit or delete a workout; it shows up within a minute without syncing.' : 'With live updates on, a finished workout shows up within a minute; otherwise press Sync now.'}${wh.error ? ' (' + esc(wh.error) + ')' : ''}${st.lastEvent ? ' Last update ' + esc(new Date(st.lastEvent).toLocaleString()) + '.' : ''}</p>`;
+}
 function syncStatusHtml(s) {
   if (!s) return '';
   if (s.error) return `<div class="notice ${s.errorKind === 'warn' ? 'warn' : 'err'}">${esc(s.error)}</div>`;
@@ -600,12 +621,14 @@ function drivePanelHtml() {
   const last = mG && mG.last;
   const counts = last && last.counts ? Object.keys(COUNT_LABEL).filter(k => last.counts[k] != null).map(k => `${(last.counts[k] || 0).toLocaleString()} ${COUNT_LABEL[k]}`).join(' · ') : '';
   const setUp = !!(mG && mG.lastSync);
-  return `<div class="panel"><div class="panel-h"><h2>Apple Watch · automatic</h2><span class="aside">${last && last.at ? 'Latest iPhone file ' + esc(new Date(last.at).toLocaleString()) : setUp ? 'Waiting for the first file' : 'Not set up yet'}</span></div>
-    <p class="sub" style="margin:0 0 12px">A free Apple Shortcut on your iPhone saves your recent heart rate, HRV, breathing, blood oxygen and sleep to Google Drive. Baseline picks up new files whenever you open it, so there's nothing to import by hand.</p>
-    <div class="row"><button class="btn primary" data-action="drive-sync" ${sync && sync.running ? 'disabled' : ''}>${sync && sync.running ? 'Checking…' : 'Check Google Drive now'}</button>
-      ${setUp ? `<button class="btn ghost" data-action="drive-full" ${sync && sync.running ? 'disabled' : ''}>Re-read all files</button>` : ''}
-      <button class="btn ghost" data-action="guide" aria-expanded="${S.guideOpen || !setUp}">${S.guideOpen || !setUp ? 'Hide setup steps' : 'Show setup steps'}</button></div>
-    <div id="driveStatus" style="margin-top:12px">${driveStatusHtml(sync)}</div>
+  const srv = !!window.BASELINE_SERVER;
+  if (srv && !S.serverInfo && !S.serverInfoLoading) { S.serverInfoLoading = true; window.BASELINE_SERVER.info().then(j => { S.serverInfo = j; }).catch(() => { S.serverInfo = {}; }).finally(() => { S.serverInfoLoading = false; if (S.tab === 'data') render(); }); }
+  return `<div class="panel"><div class="panel-h"><h2>Apple Watch · automatic</h2><span class="aside">${last && last.at ? (srv ? 'Last iPhone sync ' : 'Latest iPhone file ') + esc(new Date(last.at).toLocaleString()) : setUp ? 'Waiting for the first file' : 'Not set up yet'}</span></div>
+    <p class="sub" style="margin:0 0 12px">${srv ? 'A free Apple Shortcut on your iPhone sends your recent heart rate, HRV, breathing, blood oxygen and sleep straight to this server when you wake up, and gets this morning’s summary back as a notification. Nothing to import by hand.' : 'A free Apple Shortcut on your iPhone saves your recent heart rate, HRV, breathing, blood oxygen and sleep to Google Drive. Baseline picks up new files whenever you open it, so there\'s nothing to import by hand.'}</p>
+    <div class="row">${srv ? '' : `<button class="btn primary" data-action="drive-sync" ${sync && sync.running ? 'disabled' : ''}>${sync && sync.running ? 'Checking…' : 'Check Google Drive now'}</button>
+      ${setUp ? `<button class="btn ghost" data-action="drive-full" ${sync && sync.running ? 'disabled' : ''}>Re-read all files</button>` : ''}`}
+      <button class="btn ${srv ? '' : 'ghost'}" data-action="guide" aria-expanded="${S.guideOpen || !setUp}">${S.guideOpen || !setUp ? 'Hide setup steps' : 'Show setup steps'}</button></div>
+    ${srv ? '' : `<div id="driveStatus" style="margin-top:12px">${driveStatusHtml(sync)}</div>`}
     ${counts ? `<p class="muted" style="font-size:12px;margin:10px 0 0">${esc(last.file || '')}: ${esc(counts)}</p>` : ''}
     ${last && last.warnings && last.warnings.length ? `<p class="muted" style="font-size:12px;margin:4px 0 0">${last.warnings.map(esc).join(' · ')}</p>` : ''}
     ${S.guideOpen || !setUp ? shortcutGuideHtml() : ''}
@@ -618,12 +641,12 @@ function shortcutGuideHtml() {
   ];
   const v = (p, fmt) => `<span class="var">Health Samples › ${p}${fmt ? ' · ISO 8601' : ''}</span>`;
   return `<div class="guide">
-    <h3><span class="n">1</span>Get Google Drive ready on your iPhone</h3>
+    ${window.BASELINE_SERVER ? `<h3><span class="n">1</span>Nothing to install</h3><p>The Shortcut talks to this server directly; Google Drive is not needed.${S.serverInfo && S.serverInfo.ingestUrl ? ` Your personal sync address (keep it private): ${cp(S.serverInfo.ingestUrl)}` : ''}</p>` : `<h3><span class="n">1</span>Get Google Drive ready on your iPhone</h3>
     <ol class="steps">
       <li>Install the <b>Google Drive</b> app and sign in with the Google account you connected to Claude.</li>
       <li>Open the <b>Files</b> app, tap <b>Browse</b>, then <b>⋯ › Edit</b>, and switch on <b>Google Drive</b>.</li>
       <li>In Google Drive, create a folder called <b>Baseline</b>.</li>
-    </ol>
+    </ol>`}
     <h3><span class="n">2</span>Build the Shortcut</h3>
     <p>Open <b>Shortcuts</b>, tap <b>+</b> and name the new shortcut <b>Baseline Sync</b>. For each row of the table, add two actions, one under the other:</p>
     <ul class="steps">
@@ -638,7 +661,8 @@ function shortcutGuideHtml() {
     <ol class="steps">
       <li><b>Text</b>: insert the six Text results above (<i>Text</i>, <i>Text 2</i> … <i>Text 6</i>), each on its own line.</li>
       <li><b>Set Name</b> of that Text to ${cp('baseline-')} then the variable <b>Current Date</b> (tap it: Date Format <i>Custom</i>, ${cp('yyyy-MM-dd')}) then ${cp('.txt')}</li>
-      <li><b>Save File</b>: turn off <i>Ask Where to Save</i>, pick <b>Google Drive › Baseline</b> as the folder, and turn on <i>Overwrite If File Exists</i>.</li>
+      ${window.BASELINE_SERVER ? `<li><b>Get Contents of URL</b>: URL = your sync address from step 1, Method <b>POST</b>, Request Body <b>File</b> → pick the Text from the first action above.</li>
+      <li><b>Show Notification</b> with <i>Contents of URL</i> as the text: that is this morning’s recovery and plan.</li>` : `<li><b>Save File</b>: turn off <i>Ask Where to Save</i>, pick <b>Google Drive › Baseline</b> as the folder, and turn on <i>Overwrite If File Exists</i>.</li>`}
     </ol>
     <p>Tap <b>▶</b> to run it once. When iOS asks, allow access to every Health category in the list.</p>
     <h3><span class="n">3</span>Make it run on its own</h3>
@@ -648,8 +672,10 @@ function shortcutGuideHtml() {
       <li>Pick <b>Baseline Sync</b>. Turn off <i>Notify When Run</i> if you don't want a banner.</li>
     </ol>
     <p class="muted" style="font-size:12px">Apple only lets apps read Health data while your iPhone is unlocked, so the Shortcut runs when you open an app, not at a fixed time at night.</p>
-    <h3><span class="n">4</span>Connect it here</h3>
-    <p>Press <b>Check Google Drive now</b> above. From then on Baseline checks for new files every time you open it.</p>
+    ${window.BASELINE_SERVER ? `<p class="muted" style="font-size:12px">Sleep data is complete only after you wake, so a <b>Wake Up</b> (Sleep) or <b>Alarm › Is Stopped</b> automation works well too.</p>
+    <h3><span class="n">4</span>Check</h3>
+    <p>Run the Shortcut once: the notification shows the summary, and this panel shows the sync time after a reload.</p>` : `<h3><span class="n">4</span>Connect it here</h3>
+    <p>Press <b>Check Google Drive now</b> above. From then on Baseline checks for new files every time you open it.</p>`}
   </div>`;
 }
 

@@ -21,6 +21,10 @@
     },
     "api/db.js": {
       "maxDuration": 30
+    },
+    "api/strava/[action].js": {
+      "includeFiles": "public/js/**",
+      "maxDuration": 60
     }
   }
 }

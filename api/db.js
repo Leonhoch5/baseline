@@ -19,6 +19,11 @@ export default async function handler(req, res) {
     const url = new URL(req.url, 'http://x');
     if (req.method === 'GET') {
       if (url.searchParams.get('op') === 'selftest' && callerOk(req) === 'ingest') return send(200, await selfTest());
+      if (url.searchParams.get('op') === 'info') {
+        const host = String(req.headers['x-forwarded-host'] || req.headers.host || ''), proto = String(req.headers['x-forwarded-proto'] || 'https').split(',')[0];
+        const base = (process.env.APP_URL || (proto + '://' + host)).replace(/\/$/, '');
+        return send(200, { ingestUrl: process.env.INGEST_TOKEN ? base + '/api/ingest?token=' + encodeURIComponent(process.env.INGEST_TOKEN) : null });
+      }
       const one = url.searchParams.get('coll');
       if (one) return send(200, { docs: (await readColl(checkName(one, 'collection'))).docs });
       const colls = (url.searchParams.get('colls') || '').split(',').map(s => s.trim()).filter(Boolean);

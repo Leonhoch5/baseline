@@ -7,47 +7,16 @@
 //
 // Env: INGEST_TOKEN and the Blob store (BLOB_READ_WRITE_TOKEN). Optional: BASELINE_TZ (default Europe/Berlin).
 // The scoring code is the same file the browser runs (public/js).
-import fs from 'node:fs';
-import path from 'node:path';
-import vm from 'node:vm';
 import { ingestTokenOk } from '../lib/auth.js';
 import { readAll, writeMany } from '../lib/store.js';
+import { loadEngine, collsToData } from '../lib/engine.js';
+import { loadAuth } from '../lib/strava.js';
+import { syncActivities } from '../lib/stravaSync.js';
+export { loadEngine };
 
-process.env.TZ = process.env.BASELINE_TZ || 'Europe/Berlin'; // the app works in local wall-clock time
-
-const ENGINE_FILES = ['util.js', 'apple.js', 'shortcut.js', 'strava.js', 'model.js', 'insights.js', 'calib.js', 'recovery.js', 'tests.js', 'race.js', 'coach.js', 'planedit.js'];
-let engine = null;
-export function loadEngine(dir = path.join(process.cwd(), 'public', 'js')) {
-  if (engine) return engine;
-  const ctx = vm.createContext({ console, performance: { now: () => Date.now() }, TextDecoder, TextEncoder });
-  const src = ENGINE_FILES.map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n;\n');
-  vm.runInContext(src, ctx, { filename: 'baseline-engine.js' });
-  engine = ctx;
-  return ctx;
-}
-
-// rows [{coll, id, data}] from the stored collections
-export async function loadDocs() {
-  const all = await readAll();
-  const rows = [];
-  for (const coll of Object.keys(all)) for (const id of Object.keys(all[coll])) rows.push({ coll, id, data: all[coll][id] });
-  return rows;
-}
 async function upsert(rows) { if (rows.length) await writeMany(rows); }
-
-// same shape the browser app builds from its collections (app.js initDb)
-export function docsToData(rows) {
-  const D = { apple: {}, strava: {}, journal: {}, planMeta: null, planSessions: [], planWeeks: [], plans: [], planChecks: {}, planEdits: {}, preds: {}, profile: {}, tests: { list: [] }, overlaps: { split: {} }, metaApple: null, metaStrava: null, metaDrive: null };
-  for (const { coll, id, data } of rows) {
-    if (coll === 'apple' || coll === 'strava' || coll === 'journal' || coll === 'preds') D[coll][id] = data;
-    else if (coll === 'planSessions' || coll === 'planWeeks') D[coll].push({ id, ...data });
-    else if (coll === 'plans') D.plans.push({ ...data, id });
-    else if (coll === 'plan') { if (id === 'meta') D.planMeta = data; if (id === 'checks') D.planChecks = data; if (id === 'edits') D.planEdits = data; }
-    else if (coll === 'settings') { if (id === 'profile') D.profile = data; if (id === 'overlaps') D.overlaps = data; if (id === 'tests') D.tests = data; }
-    else if (coll === 'meta') { if (id === 'apple') D.metaApple = data; if (id === 'strava') D.metaStrava = data; if (id === 'gdrive') D.metaDrive = data; }
-  }
-  return D;
-}
+// kept for the tests: rows [{coll, id, data}] → the app's data shape
+export function docsToData(rows) { const all = {}; for (const r of rows) (all[r.coll] = all[r.coll] || {})[r.id] = r.data; return collsToData(all); }
 
 export function ingestText(E, D, text) {
   const r = E.shortcutFileToDays(text);
@@ -86,7 +55,7 @@ export default async function handler(req, res) {
   if (!ingestTokenOk(url.searchParams.get('token') || req.headers['x-baseline-token'])) return send(401, { error: 'wrong or missing token' });
   try {
     const E = loadEngine();
-    const D = docsToData(await loadDocs());
+    const D = collsToData(await readAll());
     let saved = null;
     if (req.method === 'POST') {
       const text = await readBody(req);
@@ -95,6 +64,8 @@ export default async function handler(req, res) {
       const meta = { lastSync: new Date().toISOString(), files: (D.metaDrive && D.metaDrive.files) || {}, last: { file: 'iPhone (direct)', at: new Date().toISOString(), counts: r.counts, warnings: r.warnings.slice(0, 4) }, via: 'ingest' };
       await upsert(months.map(m => ({ coll: 'apple', id: m, data: docs[m] })).concat([{ coll: 'meta', id: 'gdrive', data: meta }]));
       saved = { months, counts: r.counts, warnings: r.warnings.slice(0, 4) };
+      // the morning sync also pulls new Strava activities when Strava is connected (best effort, a few at a time)
+      try { if (await loadAuth()) { const sr = await syncActivities({ maxStreams: 8 }); saved.strava = sr.fetched; const all = await readAll(['strava', 'meta']); D.strava = collsToData(all).strava; } } catch (e) { console.warn('strava during ingest', e.message); saved.stravaError = e.code || 'failed'; }
     } else if (req.method !== 'GET') return send(405, { error: 'use POST (sync) or GET (summary)' });
     const sum = summarize(E, D);
     return send(200, { ...sum, saved });

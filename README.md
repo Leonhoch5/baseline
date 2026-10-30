@@ -29,6 +29,13 @@ The same two buttons are your backup: download now and then, restore if anything
 ### 3. Use it
 Open the app and enter the app password (once per browser). On iPhone: Safari → Share → *Add to Home Screen*.
 
+### 5. Strava (own API app, free)
+1. On strava.com → Settings → **My API Application** (https://www.strava.com/settings/api): create an app. Any name, category *Training*, website `https://<your-app>.vercel.app`, **Authorization Callback Domain** `<your-app>.vercel.app` (host only, no https://).
+2. In Vercel → Settings → Environment Variables add `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET` (from that page) and `STRAVA_VERIFY_TOKEN` (any random text), then redeploy.
+3. In the app: Settings → Strava → **Connect Strava** → allow. Then **Sync now**; **Turn on** live updates so finished workouts arrive by themselves (Strava calls `/api/strava/webhook`).
+   The morning iPhone sync also pulls new activities. Tokens stay on the server (`baseline/strava/auth.json` in the Blob store).
+   Limits: Strava allows 100 requests per 15 minutes and 1,000 a day per app; a sync fetches heart-rate streams for at most 30 activities at a time and continues next time.
+
 ### 4. iPhone sync + morning notification (replaces Google Drive)
 The Shortcut sends its text straight to Baseline and gets this morning's summary back.
 1. In the **Baseline Sync** shortcut, open **Get Contents of URL** and change the URL to
@@ -62,6 +69,6 @@ That is fine for a few dozen opens a day; Vercel emails you if you get near the 
 - `public/index.html`: page shell and script order
 - `public/js/platform.js`: login + document storage through `/api/db`, and the AI shim through `/api/ai`
 - `public/js/*.js`: the app (parsers, scoring model, insights, coaching, views)
-- `api/`: serverless functions (`db.js` storage, `login.js`, `ingest.js` runs the same scoring code as the browser from `public/js`, `ai.js` proxies Hack Club AI and holds the key, `health.js`)
-- `lib/`: shared auth (`auth.js`) and Blob storage (`store.js`) code
+- `api/`: serverless functions (`db.js` storage, `login.js`, `ingest.js` runs the same scoring code as the browser from `public/js`, `ai.js` proxies Hack Club AI and holds the key, `strava/[action].js` connect/callback/status/sync/subscribe/disconnect/webhook, `health.js`)
+- `lib/`: shared auth (`auth.js`), Blob storage (`store.js`), the scoring engine loader (`engine.js`), Strava API + tokens (`strava.js`) and the sync logic (`stravaSync.js`)
 - `scripts/import-export.mjs`: one-off import of the Claude-version export

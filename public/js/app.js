@@ -11,7 +11,7 @@ const COLLS = ['apple', 'strava', 'journal', 'planSessions', 'planWeeks', 'plans
 const S = {
   tab: 'today', date: todayYmd(), jdate: addDays(todayYmd(), -1), range: 90, actFilter: 'all', actLimit: 30, ovlLimit: 8, planAll: false,
   sample: false, sampleData: null, real: emptyData(), model: null, db: null, dbMode: 'loading', loaded: {},
-  importing: null, stravaSync: null, driveSync: null, impMonths: 12, jdraft: {}, confirmDelete: false, owner: null, guideOpen: false, planSel: null, planImport: null, planDel: null, testForm: null, planEdit: null, coachBusy: null, coachErr: null, backup: null
+  importing: null, stravaSync: null, driveSync: null, impMonths: 12, jdraft: {}, confirmDelete: false, owner: null, guideOpen: false, planSel: null, planImport: null, planDel: null, testForm: null, planEdit: null, coachBusy: null, coachErr: null, backup: null, stravaStatus: null, stravaNotice: null, serverInfo: null
 };
 function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } }
@@ -200,9 +200,26 @@ function mcpErrorState(e) {
   }[c];
   return { error: msg || 'Strava sync failed: ' + ((e && e.message) || 'unknown error'), errorKind: ['approval_required', 'server_unavailable', 'rate_limited', 'cancelled'].includes(c) ? 'warn' : 'err' };
 }
+// standalone: the server talks to Strava with its own API app (tokens never reach the browser)
+async function stravaSyncServer(opts) {
+  const SV = window.BASELINE_STRAVA;
+  S.stravaSync = { running: true, msg: opts.full ? 'Fetching your Strava history…' : 'Checking Strava for new activities…' }; refreshSync(); if (S.tab === 'data') render();
+  try {
+    const r = await SV.sync(!!opts.full, S.impMonths);
+    await SV.reload();
+    S.stravaSync = { done: r.msg || 'Synced.' };
+    if (r.streamsLeft) S.stravaSync.done += ` Heart rate for ${r.streamsLeft} more activities comes with the next sync (Strava limits requests).`;
+    S.stravaStatus = null;
+  } catch (e) {
+    const msg = { strava_not_connected: 'Connect Strava first (Settings → Strava).', strava_auth: 'Strava rejected the connection. Connect Strava again.', rate_limited: 'Strava is limiting requests right now. Try again in 15 minutes.', not_configured: e.message }[e && e.code];
+    S.stravaSync = { error: msg || humanError(e), errorKind: e && e.code === 'rate_limited' ? 'warn' : 'err' };
+  }
+  refreshSync(); changed();
+}
 async function stravaSync(opts) {
   opts = opts || {};
   if (S.stravaSync && S.stravaSync.running) return;
+  if (window.BASELINE_STRAVA) return stravaSyncServer(opts);
   S.stravaSync = { running: true, msg: 'Connecting to Strava…' }; refreshSync(); if (!opts.quiet && S.tab === 'data') render();
   let mcp = null;
   try { mcp = window.claude && window.claude.use ? await window.claude.use('mcp') : null; } catch (e) { mcp = null; }
@@ -467,6 +484,9 @@ const ACTIONS = {
     try { navigator.clipboard.writeText(t).then(done, () => selectText(b)); } catch (e) { selectText(b); }
   },
   'strava-full': () => stravaSync({ full: true }),
+  'strava-connect': async () => { const el = document.getElementById('syncStatus'); try { if (el) el.textContent = 'Opening Strava…'; await window.BASELINE_STRAVA.connect(); } catch (e) { S.stravaSync = { error: e && e.code === 'not_configured' ? e.message : humanError(e) }; refreshSync(); } },
+  'strava-webhook': async b => { const on = b.dataset.on === '1'; try { b.disabled = true; b.textContent = on ? 'Turning on…' : 'Turning off…'; await window.BASELINE_STRAVA.subscribe(on); S.stravaStatus = null; render(); } catch (e) { S.stravaSync = { error: humanError(e) }; refreshSync(); b.disabled = false; } },
+  'strava-disconnect': async b => { if (!confirm('Disconnect Strava? Activities already saved stay; new ones stop coming in.')) return; try { b.disabled = true; await window.BASELINE_STRAVA.disconnect(); S.stravaStatus = null; S.stravaSync = { done: 'Strava disconnected.' }; render(); } catch (e) { S.stravaSync = { error: humanError(e) }; refreshSync(); b.disabled = false; } },
   'save-settings': async b => {
     const num = (id) => { const x = document.getElementById(id).value.trim(); return x === '' ? null : +x; };
     const hrMax = num('setHrMax'), sn = num('setSleep'), by = num('setBirth');
@@ -667,6 +687,9 @@ function boot() {
   window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => { if (Math.abs(window.innerWidth - lastW) > 30) render(); }, 160); });
   const h = (location.hash || '').slice(1); const saved = lsGet('baseline.tab');
   S.tab = TABS.includes(h) ? h : TABS.includes(saved) ? saved : 'today';
+  // back from Strava's authorisation page (standalone): /?strava=connected | error&msg=…
+  const q = new URLSearchParams(location.search);
+  if (q.get('strava')) { S.tab = 'data'; S.stravaNotice = q.get('strava') === 'connected' ? { ok: true, text: 'Strava is connected. Press Sync now to fetch your activities.' } : { ok: false, text: 'Strava connection failed: ' + (q.get('msg') || 'unknown error') }; try { history.replaceState(null, '', location.pathname + (location.hash || '')); } catch (e) { /* ignore */ } }
   const im = lsGet('baseline.impMonths'); if (im != null && !isNaN(+im)) S.impMonths = +im;
   recompute(); render();
   initDb();
