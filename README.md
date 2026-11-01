@@ -58,7 +58,9 @@ Answers: `401` wrong token · `400` empty body (Request Body must be File) · `5
 
 ## Status
 - **Done:** hosting, login, storage, data migration, iPhone Shortcut → `/api/ingest` with morning summary, AI via Hack Club (`/api/ai`), coaching.
-- **To do:** Strava (own API app + webhook); until then Strava sync in the app doesn't work.
+- **Done (30 Oct):** Strava through your own API app: connect, sync, webhook (live updates), heart-rate streams for workouts the Watch didn't record.
+- **Done (1 Nov):** the coach reads inside each run (km splits, reps, strides, HR drift) and training zones: heart rate from Strava, run pace zones from a test / Strava / your best 5 km / the goal; upcoming run targets in the plan are rewritten from the zones (↻).
+- **To do:** nothing blocking; ideas: bike power zones from a test, swim splits from pool lengths.
 
 ## Storage and the free plan
 Data is stored as one JSON file per collection (`baseline/c/<collection>.json`) in a private Blob store, read and written only by the functions in `api/`.
