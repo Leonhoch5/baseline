@@ -18,7 +18,7 @@ function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storag
 function hasRealData() { return Object.keys(S.real.apple).length > 0 || Object.keys(S.real.strava).length > 0; }
 function cur() { return S.sample ? S.sampleData : S.real; }
 let recomputeT = null;
-function recompute() { try { const D = cur(); S.model = calibrate(enrichModel(scoreModel(buildModel(D), D)), D); try { S.model.race = raceModel(S.model, D); } catch (e) { console.error(e); } schedulePredLog(); } catch (e) { console.error(e); S.model = null; } }
+function recompute() { try { const D = cur(); S.model = calibrate(enrichModel(scoreModel(buildModel(D), D)), D); try { S.model.race = raceModel(S.model, D); } catch (e) { console.error(e); } try { S.model.goals = goalsFor(S.model); S.model.zones = zonesModel(S.model, D); S.model.runZones = applyRunZones(S.model, S.model.zones); } catch (e) { console.error(e); } schedulePredLog(); } catch (e) { console.error(e); S.model = null; } }
 function changed() { clearTimeout(recomputeT); recomputeT = setTimeout(() => { recompute(); render(); }, 40); }
 
 function bannerHtml() {
@@ -240,19 +240,25 @@ async function stravaSync(opts) {
     }
     // keep heart rate already fetched; fetch it for activities the Watch didn't record
     const existing = {}; for (const m in S.real.strava) for (const a of (S.real.strava[m] && S.real.strava[m].acts) || []) existing[a.id] = a;
-    for (const a of got) { const o = existing[a.id]; if (o && o.hrDone) { a.hrDone = true; for (const k of ['hb', 'avgHr', 'maxHr']) if (o[k] != null) a[k] = o[k]; } }
+    for (const a of got) { const o = existing[a.id]; if (!o) continue; if (o.hrDone) { a.hrDone = true; for (const k of ['hb', 'avgHr', 'maxHr']) if (o[k] != null) a[k] = o[k]; } if (o.an) a.an = o.an; if (o.anDone) a.anDone = true; }
     const appleW = []; for (const m in S.real.apple) for (const w of (S.real.apple[m] && S.real.apple[m].workouts) || []) if (w.hb) appleW.push(w);
     const covered = new Set(); for (const g of detectOverlaps(appleW, got, {}).acts) if (g.hasWatchHr) g.ids.forEach(id => covered.add(id));
     const cutoff = addDays(todayYmd(), -120);
     const watchDense = (a) => { const day = a.start.slice(0, 10), doc = S.real.apple[day.slice(0, 7)], dd = doc && doc.days && doc.days[day]; return !!dd && slotInfo(dd, minOfDayLms(a.ls), a.durS / 60).cov >= 0.6; };
-    const need = got.filter(a => !a.hrDone && !covered.has(a.id) && !watchDense(a) && a.start.slice(0, 10) >= cutoff).sort((x, y) => y.ls - x.ls).slice(0, opts.quiet ? 10 : 40);
+    const needHr = a => !a.hrDone && !covered.has(a.id) && !watchDense(a);
+    const needAn = a => !a.an && !a.anDone && (a.sport === 'run' || a.sport === 'ride') && (a.distM || 0) >= 1000;
+    const need = got.filter(a => a.start.slice(0, 10) >= cutoff && (needHr(a) || needAn(a))).sort((x, y) => y.ls - x.ls).slice(0, opts.quiet ? 10 : 40);
     let k = 0;
     for (const a of need) {
-      k++; S.stravaSync.msg = `Reading heart rate for ${k} of ${need.length} activities…`; refreshSync();
+      k++; S.stravaSync.msg = `Reading ${needAn(a) ? 'splits and heart rate' : 'heart rate'} for ${k} of ${need.length} activities…`; refreshSync();
       try {
-        const st = await callStrava(mcp, 'get_activity_streams', { activity_id: a.sid, streams: ['time', 'heart_rate'], resolution: 500 });
-        const hr = st ? hrFromStream(st.time, st.heart_rate) : null;
-        a.hrDone = true; if (hr) Object.assign(a, hr);
+        const st = await callStrava(mcp, 'get_activity_streams', { activity_id: a.sid, streams: ['time', 'heart_rate', 'distance', 'velocity_smooth', 'moving'], resolution: 800 });
+        if (needHr(a)) { const hr = st ? hrFromStream(st.time, st.heart_rate) : null; a.hrDone = true; if (hr) Object.assign(a, hr); }
+        if (needAn(a)) {
+          const an = st ? analyzeStreams(st.time, st.distance, st.heart_rate, st.velocity_smooth, st.moving) : null;
+          if (an && a.sport === 'run') { try { const pf = await callStrava(mcp, 'get_activity_performance', { activity_id: a.sid }); const best = pf ? bestEffortsOf(pf.best_efforts) : null; if (best) an.best = best; } catch (e) { if (e && MCP_STOP.includes(e.code)) throw e; } }
+          a.anDone = true; if (an) a.an = an;
+        }
       } catch (e) { if (e && MCP_STOP.includes(e.code)) throw e; }
     }
     try {
@@ -261,6 +267,10 @@ async function stravaSync(opts) {
       const p = S.real.profile || {}, patch = {};
       if (hm && hm !== p.stravaHrMax) patch.stravaHrMax = hm;
       if (zs && zs.length === 4 && JSON.stringify(zs) !== JSON.stringify(p.stravaZones)) patch.stravaZones = zs;
+      // run pace zones (m/s upper bounds of zones 1–5) and power, as Strava has them
+      const rz = z && Array.isArray(z.run_zones) && z.run_zones.length >= 5 ? z.run_zones.slice(0, 5).map(x => x && +x.max).filter(v => v > 0.5) : null;
+      if (rz && rz.length === 5 && JSON.stringify(rz) !== JSON.stringify(p.stravaRunZones)) { patch.stravaRunZones = rz; patch.stravaRunZoneSrc = z.run_zone_source || null; patch.stravaRunRef = z.sample_race_pace ? (z.sample_race_pace.is_estimated ? 'predicted ' : '') + String(z.sample_race_pace.best_effort_type || '').replace('Fastest', '').replace(/k$/, ' km').replace('HalfMarathon', 'half marathon') + ' of ' + z.sample_race_pace.time : null; }
+      if (z && z.ftp && z.ftp !== p.stravaFtp) { patch.stravaFtp = z.ftp; patch.stravaFtpEst = !!z.ftp_is_estimated; patch.stravaPowerZones = Array.isArray(z.power_zones) ? z.power_zones.map(x => x && x.max).filter(v => v > 0) : null; }
       if (Object.keys(patch).length) await saveProfile(patch);
     } catch (e) { if (e && MCP_STOP.includes(e.code)) throw e; }
     await saveStravaActs(got, { lastSync: new Date().toISOString(), via: 'api', count: got.length });

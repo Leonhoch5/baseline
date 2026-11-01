@@ -66,7 +66,7 @@ function mergeGroup(items, pairs) {
     durS: primary.durS, movS: pick('movS'), distM: pick('distM'), elevM: pick('elevM'), kcal: watch && watch.kcal ? watch.kcal : pick('kcal'),
     avgHr: hrSrc ? hrSrc.avgHr : null, maxHr: hrSrc ? hrSrc.maxHr : null, hb: hrSrc && hrSrc.hb ? hrSrc.hb : null,
     hrFrom: hrSrc ? srcLabel(hrSrc) : null, hasWatchHr: !!watch, re: strava[0] ? strava[0].re : null,
-    sources, stravaId: strava[0] ? strava[0].sid : null
+    sources, stravaId: strava[0] ? strava[0].sid : null, an: strava[0] && strava[0].an ? strava[0].an : null
   };
 }
 

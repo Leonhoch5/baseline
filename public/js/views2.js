@@ -166,7 +166,19 @@ function reviewCardHtml(r) {
   }
   const g = GRADE_CHIP[v.grade];
   return `<div class="rv ${v.grade}"><div class="rv-h"><span class="ic">${sportIcon(s ? s.sportKey : v.sportKey)}</span><b>${esc(s ? s.title : v.title)}</b>${s && s.target ? `<span class="chip">${esc(s.target)}</span>` : ''}<span class="chip ${g[1]}">${v.unplanned ? esc(v.head) : g[0]}</span></div>
-    <p>${v.notes.join(' ')}</p>${v.goal ? `<p class="rv-goal">${v.goal}</p>` : ''}</div>`;
+    <p>${v.notes.join(' ')}</p>${splitChipsHtml(v.splits)}${v.goal ? `<p class="rv-goal">${v.goal}</p>` : ''}</div>`;
+}
+// reps or km splits as a row of small chips, coloured by the verdict against the target range
+function splitChipsHtml(sp) {
+  if (!sp) return '';
+  const cls = ok => ok === 'ok' ? 'st-done' : ok === 'fast' ? 'st-missed' : ok === 'slow' ? 'st-partial' : '';
+  if ((sp.kind === 'reps' || sp.kind === 'strides') && sp.reps && sp.reps.length) {
+    return `<div class="splits"><span class="muted">${sp.kind === 'strides' ? 'Efforts' : 'Reps'}</span>${sp.reps.map((r, i) => `<span class="chip ${cls(r.ok)}" title="${esc(`${i + 1}: ${r.d} m in ${fmtDur(r.t)}${r.hr ? ', ' + r.hr + ' bpm' : ''}`)}">${r.p ? fmtMSS(r.p) : fmtDur(r.t)}</span>`).join('')}${sp.rangeTxt ? `<span class="muted">target ${esc(sp.rangeTxt)}</span>` : ''}</div>`;
+  }
+  if (sp.kind === 'km' && sp.km && sp.km.length) {
+    return `<div class="splits"><span class="muted">km</span>${sp.km.map((k, i) => `<span class="chip ${cls(k.ok)}" title="${esc(`km ${i + 1}: ${fmtMSS(k.t)}/km${k.hr ? ', ' + k.hr + ' bpm' : ''}`)}">${fmtMSS(k.t)}</span>`).join('')}${sp.z ? `<span class="muted">Z${sp.z}</span>` : ''}</div>`;
+  }
+  return '';
 }
 function weekProgressHtml(M, date) {
   const wp = weekProgress(M, date);

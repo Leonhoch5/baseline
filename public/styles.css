@@ -491,3 +491,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .cn-h b { font-size: 15px; } .cn-h .muted { font-size: 12px; }
 .cn p { margin: 0 0 8px; font-size: 14px; color: var(--fg); }
 @media (max-width: 560px) { .wk-row { grid-template-columns: 60px minmax(0, 1fr); } .wk-row .val { grid-column: 2; } }
+
+/* ---- splits in a review card ---- */
+.splits { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 6px 0 2px; font-size: 12px; }
+.splits .chip { font-variant-numeric: tabular-nums; padding: 1px 7px; }
+.splits .muted { margin-right: 2px; }

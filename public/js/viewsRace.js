@@ -4,7 +4,7 @@ function formWord(rel) { return rel == null ? '–' : rel > 0.35 ? 'very fresh' 
 VIEWS.race = (v) => {
   const M = S.model; if (!M || M.empty) { v.innerHTML = emptyStateHtml(); return; }
   const R = M.race;
-  if (!R || !R.race) { v.innerHTML = raceSetHtml(null) + (R ? testsPanelHtml(R) : ''); return; }
+  if (!R || !R.race) { v.innerHTML = raceSetHtml(null) + zonesPanelHtml(M) + (R ? testsPanelHtml(R) : ''); return; }
   const r = R.race, past = R.days < 0;
   // phase timeline
   const tot = R.phases.reduce((a, p) => a + p.weeks, 0) || 1;
@@ -31,6 +31,7 @@ VIEWS.race = (v) => {
     <ul class="tight"><li>Taper about 2 weeks, cutting volume by roughly 40–60%.</li><li>Keep intensity: short efforts at race pace stay in.</li><li>Keep how often you train; make sessions shorter rather than skipping them.</li><li>Sleep and easy days matter most in the final week; aim to start with “fresh” form.</li></ul>
     <p class="muted" style="font-size:12px;margin:6px 0 0">Based on the meta-analysis by Bosquet et al. 2007 (Med Sci Sports Exerc). Individual responses vary.</p></div>
   ${swimGoalHtml(R)}
+  ${zonesPanelHtml(M)}
   ${testsPanelHtml(R)}
   ${r.manual ? raceSetHtml(r) : ''}`;
   drawRaceChart(v.querySelector('#c-race'), R, M);
@@ -131,5 +132,24 @@ function testsPanelHtml(R) {
     </form>
     ${rows ? `<details class="method" style="margin-top:12px"${F.type ? '' : ''}><summary><b>All results</b><span class="muted" style="font-size:12px">${R.tests.length} · Strava activities named “test” or “TT” (swim 200/400/1500/1600 m, run 5 km) are added automatically</span></summary><div class="table-wrap" style="margin-top:8px"><table class="t"><thead><tr><th>Date</th><th>Test</th><th>Gives</th><th>From</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></details>` : ''}
     <p class="muted" style="font-size:12px;margin:10px 0 0">How results are used: CSS = (400 m − 200 m time) ÷ 2 per 100 m. FTP = 95% of 20-min power, or 75% of the best minute in a ramp test. Threshold heart rate = average of the last 20 min of a 30-min time trial (Friel). Run threshold pace = 30-min trial pace, or about 4% slower than 5 km pace (rule of thumb).</p>
+  </div>`;
+}
+
+// ---- training zones: heart rate and run pace, with where they come from and what they changed in the plan ----
+function zonesPanelHtml(M) {
+  const Z = M.zones; if (!Z || (!Z.hr && !Z.run)) return '';
+  const hr = Z.hr, run = Z.run;
+  const hrRows = hr ? hr.bounds.map((b, i) => `<tr><td>Z${i + 1} ${HR_ZONE_NAMES[i]}</td><td class="num">${i === 0 ? '< ' + b : (hr.bounds[i - 1] + 1) + '–' + b}</td></tr>`).concat([`<tr><td>Z5 ${HR_ZONE_NAMES[4]}</td><td class="num">> ${hr.bounds[3]}</td></tr>`]).join('') : '';
+  const runRows = run ? [1, 2, 3, 4, 5, 6].map(z => `<tr><td>Z${z} ${ZONE_NAMES[z - 1]}</td><td class="num">${esc(zoneRangeText(run, z).replace('slower than ', '> ').replace('faster than ', '< '))}</td></tr>`).join('') : '';
+  const src = run ? (run.src === 'test' ? 'From ' + run.label + '.' : run.src === 'strava' ? `From ${run.label}.` : run.src === 'best5k' ? `Built from ${run.label}, the same way Strava draws its zones.` : `Built from ${run.label}; no test, Strava zones or 5 km effort yet.`) : '';
+  const others = run && run.cands.length > 1 ? run.cands.filter(c => c.src !== run.src).map(c => `${c.src === 'test' ? 'your test' : c.src === 'strava' ? 'Strava' : c.src === 'best5k' ? 'your best 5 km' : 'the goal pace'} would put the 5 km pace at ${fmtMSS(1000 / c.v5)}/km`).join('; ') : '';
+  const applied = M.runZones && M.runZones.sessions ? `${M.runZones.sessions} upcoming run sessions carry a pace range from these zones (marked ↻ in the plan; the plan’s own wording is in the tooltip).` : 'Upcoming run sessions get a pace range from these zones once the plan has runs.';
+  return `<div class="panel" id="zonesPanel"><div class="panel-h"><h2>Training zones</h2><span class="aside">${run ? (run.src === 'strava' ? 'from Strava' : run.src === 'test' ? 'from your test' : run.src === 'best5k' ? 'from your best 5 km' : 'from the goal') : ''}</span></div>
+    <div class="cols" style="gap:14px">
+      ${hr ? `<div><div class="eyebrow">Heart rate (${esc(hr.src)}${hr.hrMax ? ', max ' + hr.hrMax : ''})</div><div class="table-wrap"><table class="t guide-t"><tbody>${hrRows}</tbody></table></div></div>` : ''}
+      ${run ? `<div><div class="eyebrow">Run pace</div><div class="table-wrap"><table class="t guide-t"><tbody>${runRows}</tbody></table></div></div>` : '<div><div class="eyebrow">Run pace</div><p class="muted" style="font-size:13px">No source yet: a run test, a Strava sync (zones), or an analysed run with a 5 km effort.</p></div>'}
+    </div>
+    ${run ? `<p class="muted" style="font-size:12px;margin:10px 0 0">${esc(src)}${others ? ' For comparison, ' + esc(others) + '.' : ''}${run.warn ? ` <b>${esc(run.warn)}</b>` : ''} ${esc(applied)}</p>` : ''}
+    ${Z.ftp ? `<p class="muted" style="font-size:12px;margin:6px 0 0">Bike: FTP ${Z.ftp.w} W${Z.ftp.estimated ? ' (Strava’s estimate)' : ''}; power zones are shown for information only until a bike test is logged.</p>` : ''}
   </div>`;
 }

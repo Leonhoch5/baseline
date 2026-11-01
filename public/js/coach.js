@@ -108,6 +108,12 @@ function reviewSession(M, s) {
     flags.pace = (T.hi != null && a.avgHr > T.hi + 3) ? 'fast' : (T.lo != null && a.avgHr < T.lo - 5) ? 'slow' : 'ok';
     notes.push(`Average ${a.avgHr} bpm against ${esc(T.text)}${flags.pace === 'fast' ? ': over the limit' : flags.pace === 'slow' ? ': under the range' : ': inside'}.`);
   }
+  // 4b. inside the session: reps, km splits, HR drift (from the Strava streams, when analysed)
+  let splits = null;
+  if (a.an && (s.sportKey === 'run' || s.sportKey === 'ride')) {
+    splits = splitsReview(M, s, a, T, continuous);
+    if (splits) { if (splits.note) notes.push(splits.note); if (splits.pace) flags.pace = splits.pace; }
+  }
   // 5. what it means for the goal
   let goalTxt = null;
   if (s.sportKey === 'swim' && G.swim && pace != null) {
@@ -118,11 +124,80 @@ function reviewSession(M, s) {
     goalTxt = `Average ${fmtMSS(pace)}/km: ${pace > gp ? '+' : '−'}${fmtMSS(Math.abs(pace - gp))} on goal race pace ${fmtMSS(gp)}/km (${G.run.label}, ${G.run.days} days away).${['recovery', 'easy'].includes(s.intensity) ? ' Easy runs should sit 60–90 s/km slower than race pace.' : ''}`;
   }
   // grade
-  const bad = (flags.dur === 'short' ? 1 : 0) + (flags.eff === 'too-hard' || flags.eff === 'too-easy' ? 1 : 0) + (flags.pace === 'fast' || flags.pace === 'slow' ? 0.5 : 0);
+  // a pace verdict backed by the splits (reps or km) weighs as much as the effort verdict; one from the whole-session average, half
+  const bad = (flags.dur === 'short' ? 1 : 0) + (flags.eff === 'too-hard' || flags.eff === 'too-easy' ? 1 : 0) + (flags.pace === 'fast' || flags.pace === 'slow' ? (splits && splits.pace === flags.pace ? 1 : 0.5) : 0);
   const soft = (flags.dur === 'bit-short' || flags.dur === 'bit-long' || flags.dur === 'long' ? 1 : 0) + (flags.eff === 'bit-hard' ? 1 : 0);
   const grade = bad >= 1 ? (bad >= 2 ? 'miss' : 'partial') : soft >= 2 ? 'partial' : 'hit';
   const head = grade === 'hit' ? 'As planned' : grade === 'partial' ? 'Partly as planned' : 'Not as planned';
-  return { grade, head, flags, notes, goal: goalTxt, pace, easy, hard, zones: z, mins, actGid: a.gid };
+  return { grade, head, flags, notes, goal: goalTxt, pace, easy, hard, zones: z, mins, actGid: a.gid, splits };
+}
+
+// ---- the parts of a session: reps against the prescription, km splits against the zone, HR drift ----
+function splitsReview(M, s, a, T, continuous) {
+  const an = a.an, Z = M.zones, run = Z && Z.run;
+  const st = parseStructure(s), tz = s.targetZone;
+  // target pace range for the work parts: the zone, else the plan's pace target, else race pace
+  let lo = null, hi = null, rangeTxt = null;
+  if (tz && tz.z !== 'race' && !tz.easyPart) { lo = tz.lo; hi = tz.hi; rangeTxt = `${zoneRangeText(run, tz.z)} (Z${tz.z})`; }
+  else if (tz && tz.z === 'race') { lo = tz.lo; hi = tz.hi; rangeTxt = `race pace ${fmtMSS(tz.lo)}–${fmtMSS(tz.hi)}/km`; }
+  else if (T && T.kind === 'pace' && T.per === 1000) { lo = T.lo * 0.98; hi = T.hi * 1.02; rangeTxt = T.text; }
+  const inRange = p => lo == null ? null : p < lo ? 'fast' : p > hi ? 'slow' : 'ok';
+  if (s.sportKey === 'ride') {
+    if (an.drift == null) return null;
+    return { kind: 'ride', drift: an.drift, note: `HR drift ${an.drift}% over the ride (${an.drift < 5 ? 'steady' : an.drift < 10 ? 'noticeable: the second half cost more heart rate for the same speed' : 'high: too hard or too long for the day'}).` };
+  }
+  // A. structured session: find the efforts that match the prescription
+  if (st && !continuous && st.kind !== 'strides' && st.kind !== 'hills') {
+    const w = st.work;
+    const cand = an.segs.filter(g => w.m ? g.d >= Math.max(80, w.m * 0.6) && g.d <= w.m * 1.5 : g.t >= w.s * 0.6 && g.t <= w.s * 1.5);
+    const reps = (cand.length > st.reps + 1 ? [...cand].sort((x, y) => (w.m ? y.d - x.d : y.t - x.t)).slice(0, st.reps).sort((x, y) => x.s - y.s) : cand);
+    if (!reps.length) return { kind: 'reps', reps: [], note: `No efforts of ${st.text} show up in the pace data: the ${st.reps} reps were not run as written (or the watch did not catch them).`, pace: 'slow' };
+    const judged = reps.map(g => ({ ...g, ok: g.p ? inRange(g.p) : null }));
+    const nOk = judged.filter(r => r.ok === 'ok').length, nFast = judged.filter(r => r.ok === 'fast').length, nSlow = judged.filter(r => r.ok === 'slow').length;
+    const first = judged[0], last = judged[judged.length - 1];
+    const fade = first.p && last.p && judged.length >= 3 ? (last.p - first.p) / first.p : null;
+    const paces = judged.map(r => r.p ? fmtMSS(r.p) : fmtDur(r.t)).join(' · ');
+    let note = `Reps ${paces}${judged[0].p ? '/km' : ''} (plan ${st.reps} × ${w.m ? (w.m >= 1000 ? w.m / 1000 + ' km' : w.m + ' m') : fmtDur(w.s)}${rangeTxt ? ' at ' + rangeTxt : ''})`;
+    if (judged.length < st.reps) note += `: only ${judged.length} of ${st.reps} efforts found`;
+    else if (lo != null) note += `: ${nOk} of ${judged.length} inside${nFast ? `, ${nFast} faster` : ''}${nSlow ? `, ${nSlow} slower` : ''}`;
+    if (fade != null) note += fade > 0.04 ? `; faded ${Math.round(fade * 100)}% from first to last rep` : fade < -0.04 ? `; last rep ${Math.round(-fade * 100)}% faster than the first (started too cautiously)` : '; even reps';
+    note += '.';
+    const hrs = judged.filter(r => r.hr).map(r => r.hr);
+    if (T && T.kind === 'hr' && hrs.length) note += ` Rep heart rate ${Math.min(...hrs)}–${Math.max(...hrs)} bpm against ${esc(T.text)}.`;
+    const pace = judged.length < st.reps - 1 ? 'slow' : lo == null ? null : nOk / judged.length >= 0.7 ? 'ok' : nFast > nSlow ? 'fast' : 'slow';
+    return { kind: 'reps', reps: judged, range: lo != null ? [lo, hi] : null, rangeTxt, note, pace, fade };
+  }
+  // B. strides / hill reps: count them
+  if (st && (st.kind === 'strides' || st.kind === 'hills')) {
+    const w = st.work, cand = an.segs.filter(g => g.t >= Math.max(10, (w.s || 20) * 0.5) && g.t <= (w.s || 20) * 2.5);
+    const kmNote = kmSplitsNote(M, s, a, an, run, tz && tz.easyPart ? tz : null);
+    const note = `${cand.length ? `${cand.length} ${st.kind === 'hills' ? 'hill efforts' : 'strides'} found (${st.reps} planned), ${Math.round(cand.reduce((x, y) => x + y.t, 0) / cand.length)} s each${cand[0].p ? `, about ${fmtMSS(Math.round(cand.reduce((x, y) => x + y.p, 0) / cand.length))}/km` : ''}.` : `No ${st.kind === 'hills' ? 'hill efforts' : 'strides'} show up in the pace data (${st.reps} planned).`}${kmNote ? ' ' + kmNote.note : ''}`;
+    return { kind: 'strides', reps: cand, km: kmNote ? kmNote.km : null, note, pace: kmNote ? kmNote.pace : null };
+  }
+  // C. continuous run: km splits against the zone, evenness, drift
+  const kn = kmSplitsNote(M, s, a, an, run, tz);
+  return kn ? { kind: 'km', ...kn } : null;
+}
+function kmSplitsNote(M, s, a, an, run, tz) {
+  const full = an.km.filter(k => k.d == null); if (full.length < 2) return null;
+  const paces = full.map(k => k.t), mn = Math.min(...paces), mx = Math.max(...paces);
+  let z = tz && tz.z !== 'race' ? tz.z : null, lo = null, hi = null;
+  if (z && run) [lo, hi] = zonePaceRange(run, z);
+  const inside = lo != null ? full.filter(k => k.t >= lo && k.t <= hi).length : null, faster = lo != null ? full.filter(k => k.t < lo).length : null, slower = lo != null ? full.filter(k => k.t > hi).length : null;
+  let note = `Km splits ${fmtMSS(mn)}–${fmtMSS(mx)}/km`;
+  if (an.half != null) note += an.half <= -1.5 ? `, second half ${Math.abs(an.half)}% faster` : an.half >= 1.5 ? `, second half ${an.half}% slower` : ', even pace';
+  if (an.drift != null) note += `; HR drift ${an.drift}% (${an.drift < 5 ? 'steady' : an.drift < 10 ? 'noticeable' : 'high: too fast or too long for today'})`;
+  note += '.';
+  let pace = null;
+  if (inside != null && run) {
+    note += ` ${inside} of ${full.length} km inside Z${z} (${zoneRangeText(run, z)})${faster ? `, ${faster} faster` : ''}${slower ? `, ${slower} slower` : ''}.`;
+    const easy = z <= 2;
+    if (easy && faster / full.length > 0.3) { pace = 'fast'; note += ' Too fast for an easy day.'; }
+    else if (!easy && slower / full.length > 0.5) pace = 'slow';
+    else if (!easy && faster / full.length > 0.5) pace = 'fast';
+    else pace = 'ok';
+  }
+  return { km: full.map(k => ({ t: k.t, hr: k.hr, ok: lo == null ? null : k.t < lo ? 'fast' : k.t > hi ? 'slow' : 'ok' })), z, range: lo != null ? [lo, hi] : null, note, pace, drift: an.drift, half: an.half };
 }
 
 // ---- unplanned activity → judged against the day's guidance ----
@@ -199,7 +274,9 @@ function coachNotePrompt(M, date) {
     strain: { today: +(d.strain || 0).toFixed(1), target: dr ? dr.target : null },
     dayVerdict: dr ? dr.verdict : null,
     sessions: dr ? dr.reviews.map(r => ({ planned: r.session ? { title: r.session.title, minutes: r.session.durationMin, intensity: r.session.intensity, target: r.session.target || null, status: r.session.status } : null,
-      done: r.review ? { grade: r.review.grade, minutes: Math.round(r.review.mins || 0), notes: r.review.notes.map(n => n.replace(/<[^>]+>/g, '')), goal: r.review.goal ? r.review.goal.replace(/<[^>]+>/g, '') : null, unplanned: !!r.review.unplanned } : null })) : [],
+      done: r.review ? { grade: r.review.grade, minutes: Math.round(r.review.mins || 0), notes: r.review.notes.map(n => n.replace(/<[^>]+>/g, '')), goal: r.review.goal ? r.review.goal.replace(/<[^>]+>/g, '') : null, unplanned: !!r.review.unplanned,
+        splits: r.review.splits ? (r.review.splits.kind === 'reps' || r.review.splits.kind === 'strides' ? { reps: r.review.splits.reps.map(x => ({ paceKm: x.p ? fmtMSS(x.p) : null, sec: x.t, m: x.d, hr: x.hr, verdict: x.ok || null })), target: r.review.splits.rangeTxt || null } : r.review.splits.kind === 'km' ? { kmPaces: r.review.splits.km.map(k => fmtMSS(k.t)), zone: r.review.splits.z, hrDriftPct: r.review.splits.drift, secondHalfPct: r.review.splits.half } : { hrDriftPct: r.review.splits.drift }) : null } : null })) : [],
+    zones: M.zones && M.zones.run ? { runPaceZonesSKm: M.zones.run.paceBounds.map(p => fmtMSS(p)), source: M.zones.run.label } : null,
     week: { planned: wp.by, extra: wp.extra },
     tomorrow: M.plan.sessions.filter(s => s.date === addDays(date, 1) && !s.isRest).map(s => ({ title: s.title, minutes: s.durationMin, intensity: s.intensity, target: s.target || null })),
   };

@@ -27,6 +27,7 @@ function dateOfLms(lms) { return new Date(lms).toISOString().slice(0, 10); }
 function minOfDayLms(lms) { const d = new Date(lms); return d.getUTCHours() * 60 + d.getUTCMinutes() + d.getUTCSeconds() / 60; }
 
 function fmtHM(min) { if (min == null || isNaN(min)) return '–'; const m = Math.round(min); return Math.floor(m / 60) + ':' + pad2(m % 60); }
+function fmtDur(sec) { sec = Math.round(sec || 0); return sec >= 90 ? (sec % 60 ? Math.floor(sec / 60) + ':' + pad2(sec % 60) + ' min' : sec / 60 + ' min') : sec + ' s'; }
 function fmtDurLong(min) { if (min == null) return '–'; const m = Math.round(min); const h = Math.floor(m / 60); return h ? h + 'h ' + pad2(m % 60) + 'm' : m + ' min'; }
 function fmtClock(lmsOrMin, isMin) { const m = isMin ? lmsOrMin : minOfDayLms(lmsOrMin); const mm = Math.round(m) % 1440; return pad2(Math.floor(mm / 60)) + ':' + pad2(mm % 60); }
 function fmtKm(m) { if (!m) return null; return (m / 1000).toFixed(m < 10000 ? 2 : 1) + ' km'; }
