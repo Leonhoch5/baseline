@@ -56,8 +56,18 @@ function drawRaceChart(el, R, M) {
 function swimGoalHtml(R) {
   const s = R.swim; if (!s) return '';
   const g = s.goal, last = s.last;
-  const rateTxt = s.rate != null ? `Your CSS has changed by ${s.rate <= 0 ? '−' : '+'}${Math.abs(s.rate).toFixed(1)} s/100 m per month between tests${s.projected != null ? `; at that rate you’d reach ${fmtMSS(s.projected, 1)}/100 m by race day (${fmtMSS(s.projected * g.dist / 100)} for ${g.dist} m)` : ''}.` : 'A second test will show how fast your pace is improving.';
-  const trend = s.recentBest != null ? `Fastest average moving pace in a session: ${fmtMSS(s.recentBest, 1)}/100 m in the last 4 weeks${s.beforeBest != null ? ` (vs ${fmtMSS(s.beforeBest, 1)} the 4 weeks before)` : ''}. Volume ${(s.recentVol / 1000).toFixed(1)} km in ${s.recentN} swims${s.beforeVol ? ` (vs ${(s.beforeVol / 1000).toFixed(1)} km)` : ''}.` : '';
+  // what the tests say about the goal: the change between tests against the change still needed (no straight-line extrapolation:
+  // the first gain after a block is usually the biggest, and a line through two tests says nothing about race day)
+  let rateTxt;
+  const first = s.cssTests && s.cssTests.length >= 2 ? s.cssTests[0] : null;
+  if (!last) rateTxt = 'Log a CSS test (Training › Race) to see where you stand against the goal pace.';
+  else if (s.gap != null && s.gap <= 0) rateTxt = `Your CSS is already at goal pace. The work now is holding ${fmtMSS(s.goalPace, 2)}/100 m for ${g.dist} m, and doing it in open water.`;
+  else if (first && s.rate != null) {
+    const gained = first.cssPace - last.cssPace, weeks = Math.max(1, Math.round(daysBetween(first.date, last.date) / 7));
+    const need = s.gap, perMonth = s.needRate != null ? Math.abs(s.needRate) : null;
+    const verdict = gained <= 0 ? 'The gap has not closed yet.' : perMonth != null && Math.abs(s.rate) >= perMonth * 3 ? 'Even a third of that pace of improvement would get you there; the first gain after a block is usually the biggest, so expect smaller steps from here.' : perMonth != null && Math.abs(s.rate) >= perMonth ? 'That is faster than you need, so you are on track if it holds.' : perMonth != null ? `That is slower than the ${perMonth.toFixed(1)} s/100 m a month you need; the main sets have to bite harder.` : '';
+    rateTxt = `CSS ${fmtMSS(first.cssPace, 1)} → ${fmtMSS(last.cssPace, 1)}/100 m over ${weeks} week${weeks > 1 ? 's' : ''} (${gained >= 0 ? '−' : '+'}${Math.abs(gained).toFixed(1)} s). Still ${need.toFixed(1)} s/100 m to goal pace by race day. ${verdict}`;
+  } else rateTxt = `One CSS test so far (${fmtMSS(last.cssPace, 1)}/100 m, ${fmtDayShort(last.date)}): ${s.gap != null ? s.gap.toFixed(1) + ' s/100 m to goal pace' : ''}. The retest in the plan shows whether the gap is closing.`;
   return `<div class="panel" id="swimGoal"><div class="panel-h"><h2>Swim goal: ${g.dist} m under ${fmtMSS(g.sec)}</h2><span class="aside">needs ${fmtMSS(s.goalPace, 2)}/100 m</span></div>
     <div class="tiles swim-tiles" style="margin-bottom:12px">
       ${tile('Critical swim speed', last ? fmtMSS(last.cssPace, 1) : null, '/100m', last ? 'test ' + fmtDayShort(last.date) : 'no test yet', '')}
@@ -66,7 +76,7 @@ function swimGoalHtml(R) {
       ${tile('Needed per month', s.needRate != null && s.gap > 0 ? Math.abs(s.needRate).toFixed(1) : null, 's/100 m', s.needRate != null && s.gap > 0 ? 'faster, steady until race day' : '', '')}
       ${s.lastTrial ? tile('Latest ' + g.dist + ' m test', fmtMSS(s.lastTrial.at), '', (s.lastTrial.type === 'swim_broken' ? 'broken, ' : '') + fmtDayShort(s.lastTrial.date) + (s.lastTrial.at <= g.sec ? ' · under goal' : ' · ' + fmtMSS(s.lastTrial.at - g.sec) + ' to go'), s.lastTrial.at <= g.sec ? 'delta-good' : '') : ''}
     </div>
-    <p class="sub" style="font-size:13px;margin:0 0 8px">${esc(rateTxt)} ${esc(trend)}</p>
+    <p class="sub" style="font-size:13px;margin:0 0 8px">${esc(rateTxt)}</p>
     <div class="legend"><span><i class="box" style="background:var(--sleep)"></i>Average moving pace per swim</span><span><i style="background:var(--rec-mid)"></i>CSS</span><span><i style="background:var(--rec-hi)"></i>Goal pace</span></div>
     <div class="chart" id="c-swim"></div>
     <p class="muted" style="font-size:12px;margin:6px 0 12px">CSS = 200 m ÷ (400 m time − 200 m time), roughly the pace you can hold for about 30 minutes, so it approximates ${g.dist} m race pace in the pool. Open water, a wetsuit, current and the start change the real race time. Session paces include easy work and drills, so they sit around or above CSS.</p>
