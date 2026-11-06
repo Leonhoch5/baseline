@@ -4,7 +4,7 @@ function formWord(rel) { return rel == null ? '–' : rel > 0.35 ? 'very fresh' 
 VIEWS.race = (v) => {
   const M = S.model; if (!M || M.empty) { v.innerHTML = emptyStateHtml(); return; }
   const R = M.race;
-  if (!R || !R.race) { v.innerHTML = raceSetHtml(null) + zonesPanelHtml(M) + (R ? testsPanelHtml(R) : ''); return; }
+  if (!R || !R.race) { v.innerHTML = racePacingHtml(M) + raceSetHtml(null) + zonesPanelHtml(M) + (R ? testsPanelHtml(R) : ''); return; }
   const r = R.race, past = R.days < 0;
   // phase timeline
   const tot = R.phases.reduce((a, p) => a + p.weeks, 0) || 1;
@@ -30,6 +30,7 @@ VIEWS.race = (v) => {
     <p style="margin:0 0 8px">${tc != null ? `Your plan cuts weekly load by <b>${Math.round(tc * 100)}%</b> in the last 2 weeks, compared with its heaviest 4-week block before that (from ${esc(fmtDayShort(R.peakStart))}). ` : ''}${esc(taperVerdict)}</p>
     <ul class="tight"><li>Taper about 2 weeks, cutting volume by roughly 40–60%.</li><li>Keep intensity: short efforts at race pace stay in.</li><li>Keep how often you train; make sessions shorter rather than skipping them.</li><li>Sleep and easy days matter most in the final week; aim to start with “fresh” form.</li></ul>
     <p class="muted" style="font-size:12px;margin:6px 0 0">Based on the meta-analysis by Bosquet et al. 2007 (Med Sci Sports Exerc). Individual responses vary.</p></div>
+  ${racePacingHtml(M)}
   ${swimGoalHtml(R)}
   ${zonesPanelHtml(M)}
   ${testsPanelHtml(R)}
@@ -83,6 +84,21 @@ function swimGoalHtml(R) {
   </div>`;
 }
 function M_today() { return (S.model && S.model.today) || todayYmd(); }
+
+// ---- race pacing card for the next run race in the plan ----
+function racePacingHtml(M) {
+  const P = typeof racePacing === 'function' ? racePacing(M) : null; if (!P || P.days < 0) return '';
+  const rows = P.km.map(k => `<tr><td>km ${k.i}</td><td class="num">${fmtMSS(k.p)}</td><td class="num">${fmtMSS(k.cum)}</td><td class="muted">${esc(k.note)}</td></tr>`).join('');
+  return `<div class="panel" id="racePacing"><div class="panel-h"><h2>Race plan: ${esc(P.race)}</h2><span class="aside">${P.days === 0 ? 'today' : `in ${P.days} day${P.days > 1 ? 's' : ''}`} · ${esc(fmtDay(P.date))}</span></div>
+    <div class="tiles swim-tiles" style="margin-bottom:12px">
+      ${tile('Goal', fmtMSS(P.lo) + (P.hi !== P.lo ? '–' + fmtMSS(P.hi) : ''), '', `${P.distM / 1000} km`, '')}
+      ${tile('Pace needed', fmtMSS(P.paceHi) + (P.hi !== P.lo ? '–' + fmtMSS(P.paceLo) : ''), '/km', 'for the goal range', '')}
+      ${tile('Plan pace', fmtMSS(P.paceMid), '/km', `aims at ${fmtMSS(P.mid)}${P.zone ? ' · Z' + P.zone + ' of your run zones' : ''}`, '')}
+    </div>
+    <div class="table-wrap"><table class="t pace-t"><thead><tr><th>Split</th><th class="num">Target</th><th class="num">Clock</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <ul class="tight" style="margin-top:12px"><li><b>First km no faster than ${fmtMSS(P.km[0].p)}.</b> Most 10 km goals are lost in the first kilometre, not the last; every 5 s/km too fast early costs more than that later.</li><li>Even splits through the middle at ${fmtMSS(P.km[1].p)}/km; check the clock at every km marker, not the watch pace, which lags on turns.</li>${P.hrTxt ? `<li>${esc(P.hrTxt[0].toUpperCase() + P.hrTxt.slice(1))}.</li>` : ''}<li>Warm-up: ${esc(P.warmup)}.</li>${P.taperNote ? `<li>${esc(P.taperNote)}</li>` : ''}</ul>
+    <p class="muted" style="font-size:12px;margin:8px 0 0">Flat-course plan at the middle of your goal range. The coach’s note on race morning carries these splits.</p></div>`;
+}
 
 function drawSwimChart(el, R, M) {
   const s = R.swim; if (!el || !s) return;

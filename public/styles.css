@@ -496,3 +496,19 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .splits { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 6px 0 2px; font-size: 12px; }
 .splits .chip { font-variant-numeric: tabular-nums; padding: 1px 7px; }
 .splits .muted { margin-right: 2px; }
+
+/* ---- day status (green / yellow / red) with its one-tap change ---- */
+.ds { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 10px 12px; border-radius: var(--r-sm); margin-top: 12px; background: var(--panel-2); border-left: 4px solid var(--muted); font-size: 14px; }
+.ds-green { border-left-color: var(--rec-hi); } .ds-yellow { border-left-color: var(--rec-mid); } .ds-red { border-left-color: var(--rec-lo); }
+.ds > div:first-child { min-width: 0; flex: 1 1 240px; }
+.ds .ds-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; background: var(--muted); vertical-align: 1px; }
+.ds-green .ds-dot { background: var(--rec-hi); } .ds-yellow .ds-dot { background: var(--rec-mid); } .ds-red .ds-dot { background: var(--rec-lo); }
+.ds b { font-size: 15px; } .ds .muted { font-size: 12px; }
+.ds .ds-t { color: var(--fg-2); font-size: 13px; margin-top: 3px; }
+.ds .ds-a { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.ds .ds-a .muted { font-size: 12px; max-width: 320px; }
+.hrv-band { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; margin: 0 0 10px; }
+.hrv-band b { font-weight: 600; }
+
+/* ---- race pacing card ---- */
+.pace-t td.num { font-variant-numeric: tabular-nums; text-align: right; }

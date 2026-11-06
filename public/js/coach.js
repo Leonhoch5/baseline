@@ -114,6 +114,12 @@ function reviewSession(M, s) {
     splits = splitsReview(M, s, a, T, continuous);
     if (splits) { if (splits.note) notes.push(splits.note); if (splits.pace) flags.pace = splits.pace; }
   }
+  // 4c. long-run jump: more than 10% beyond the longest run of the previous 30 days (Frandsen 2025's injury predictor)
+  let jump = null;
+  if (s.sportKey === 'run' && a.distM >= 3000 && typeof longestRun30 === 'function') {
+    const ref = longestRun30(M, s.date, a.gid);
+    if (ref && a.distM > ref.distM * 1.1) { jump = a.distM / ref.distM - 1; notes.push(`Longest run of the last 30 days by ${Math.round(jump * 100)}% (${fmtKm(a.distM)} vs ${fmtKm(ref.distM)}): ${jump > 0.25 ? 'a big jump; expect the legs to feel it for two days, and don’t lengthen again next week' : 'a jump beyond the 10% that the injury data allows; hold this length for two weeks'}.`); }
+  }
   // 5. what it means for the goal
   let goalTxt = null;
   if (s.sportKey === 'swim' && G.swim && pace != null) {
@@ -126,10 +132,10 @@ function reviewSession(M, s) {
   // grade
   // a pace verdict backed by the splits (reps or km) weighs as much as the effort verdict; one from the whole-session average, half
   const bad = (flags.dur === 'short' ? 1 : 0) + (flags.eff === 'too-hard' || flags.eff === 'too-easy' ? 1 : 0) + (flags.pace === 'fast' || flags.pace === 'slow' ? (splits && splits.pace === flags.pace ? 1 : 0.5) : 0);
-  const soft = (flags.dur === 'bit-short' || flags.dur === 'bit-long' || flags.dur === 'long' ? 1 : 0) + (flags.eff === 'bit-hard' ? 1 : 0);
+  const soft = (flags.dur === 'bit-short' || flags.dur === 'bit-long' || flags.dur === 'long' ? 1 : 0) + (flags.eff === 'bit-hard' ? 1 : 0) + (jump != null && jump > 0.25 ? 1 : 0);
   const grade = bad >= 1 ? (bad >= 2 ? 'miss' : 'partial') : soft >= 2 ? 'partial' : 'hit';
   const head = grade === 'hit' ? 'As planned' : grade === 'partial' ? 'Partly as planned' : 'Not as planned';
-  return { grade, head, flags, notes, goal: goalTxt, pace, easy, hard, zones: z, mins, actGid: a.gid, splits };
+  return { grade, head, flags, notes, goal: goalTxt, pace, easy, hard, zones: z, mins, actGid: a.gid, splits, jump };
 }
 
 // ---- the parts of a session: reps against the prescription, km splits against the zone, HR drift ----
@@ -280,8 +286,21 @@ function coachNotePrompt(M, date) {
     week: { planned: wp.by, extra: wp.extra },
     tomorrow: M.plan.sessions.filter(s => s.date === addDays(date, 1) && !s.isRest).map(s => ({ title: s.title, minutes: s.durationMin, intensity: s.intensity, target: s.target || null })),
   };
+  // the day status (green/yellow/red) and what it changed; the two-sided HRV band; body-signal radar grade
+  const ds = typeof dayStatus === 'function' ? dayStatus(M, date) : null;
+  if (ds && ds.color !== 'none') ctx.dayStatus = { color: ds.color, reasons: ds.why, meaning: ds.text, change: ds.action ? ds.action.kind : null, hrvBand: d.hrvState ? { state: d.hrvState, daysOutside: d.hrvOutDays || 0 } : null, bodySignals: ds.radar };
+  // race plan on race day and the day before
+  const rp = typeof racePacing === 'function' ? racePacing(M) : null;
+  if (rp && rp.days >= 0 && rp.days <= 1) ctx.racePlan = { race: rp.race, when: rp.days === 0 ? 'today' : 'tomorrow', goal: `${fmtMSS(rp.lo)}–${fmtMSS(rp.hi)}`, planPaceKm: fmtMSS(rp.paceMid), firstKm: fmtMSS(rp.km[0].p), middleKms: fmtMSS(rp.km[1].p), rule: 'first km no faster than goal pace, even splits, last km whatever is left', warmup: rp.warmup };
+  // long-run jump warnings for the coming week
+  const lg = typeof longRunGuard === 'function' ? longRunGuard(M, date) : [];
+  if (lg.length) ctx.longRunWarning = lg.map(g => ({ session: g.s.title, date: g.s.date, planned: g.planM ? g.planM / 1000 + ' km' : g.planMin + ' min', longestLast30Days: g.ref.distM ? g.ref.distM / 1000 + ' km' : null, jumpPct: Math.round(g.pct * 100), rule: 'runs >10% beyond the longest of the last 30 days are the strongest injury predictor' }));
+  // tonight's bedtime
+  const tn = typeof sleepPlanner === 'function' && M.day[date] ? sleepPlanner(M.day[date], M) : null;
+  if (tn) ctx.tonight = { inBedBy: fmtClock(tn.bed, true), needH: +(tn.need / 60).toFixed(1), wakeAt: fmtClock(tn.wake, true), beforeKeySession: tn.keySession ? tn.keySession.title : null };
   return `You are the athlete's coach. Judge this day against the training plan and the goal, in plain direct language, second person, no praise padding, no medical claims.
 Use ONLY the data below; do not invent numbers. Mention the goal race by name when relevant. Be specific about what was right and what was off, and give ONE concrete instruction for tomorrow.
+If dayStatus is yellow or red, never add intensity: hold or reduce. If racePlan is present, the note must carry its splits and the first-km rule. If longRunWarning is present, say so in one sentence. If tonight is present, end the note with the bedtime.
 Reply with ONLY a JSON object: {"verdict": "3-6 words", "note": "60-120 words judging the day", "tomorrow": "one sentence instruction for tomorrow"}.
 
 DATA:

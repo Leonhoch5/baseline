@@ -36,6 +36,13 @@ function enrichModel(M) {
     }
     d.hrv7 = w7.length >= 3 ? Math.exp(mean(w7)) : null;
     if (w60.length >= 14) { const m = mean(w60), sd = stdev(w60) || 0.05; d.hrvBand = [Math.exp(m - 0.5 * sd), Math.exp(m), Math.exp(m + 0.5 * sd)]; }
+    // two-sided band (Vesterinen 2016: the 7-day average outside mean ± 0.5 SD, above OR below, is a reason to hold back;
+    // Garmin's HRV Status calls both "Unbalanced"). The day counter says how long it has been outside.
+    d.hrvState = d.hrv7 != null && d.hrvBand ? (d.hrv7 < d.hrvBand[0] ? 'below' : d.hrv7 > d.hrvBand[2] ? 'above' : 'inside') : null;
+    const pv = i > 0 ? M.day[ds[i - 1]] : null;
+    d.hrvOutDays = d.hrvState && d.hrvState !== 'inside' ? (pv && pv.hrvState === d.hrvState ? (pv.hrvOutDays || 0) + 1 : 1) : 0;
+    // day-to-day spread of the last 7 nights (HRV4Training's coefficient of variation): a rising CV with a falling average = struggling to adapt
+    d.hrvCv7 = w7.length >= 5 ? stdev(w7) * 100 : null;   // SD of log(HRV) × 100 ≈ CV in %
     d.rhr7 = r7.length >= 3 ? mean(r7) : null;
     if (r60.length >= 14) { const m = mean(r60), sd = stdev(r60) || 1; d.rhrBand = [m - Math.max(1, 0.5 * sd), m, m + Math.max(1, 0.5 * sd)]; }
     d.rec7 = rec7.length >= 3 ? mean(rec7) : null;
@@ -64,7 +71,8 @@ function trainingStatus(M, date) {
   const signals = [];
   signals.push({ k: 'Load ratio (7 vs 28 days)', v: acwr != null ? acwr.toFixed(2) : '–', tone: acwr == null ? 'neutral' : acwr > 1.5 ? 'bad' : acwr > 1.3 || acwr < 0.8 ? 'warn' : 'good', t: acwr == null ? 'Needs 2 weeks of data' : acwr > 1.5 ? 'Load spike' : acwr > 1.3 ? 'Well above your usual load' : acwr < 0.8 ? 'Below your usual load' : 'Close to your usual load' });
   signals.push({ k: 'Fitness trend (42-day load)', v: ramp != null ? (ramp >= 0 ? '+' : '−') + Math.abs(ramp * 100).toFixed(0) + '%/wk' : '–', tone: ramp == null ? 'neutral' : ramp > 0.12 ? 'warn' : ramp > 0.01 ? 'good' : ramp < -0.05 ? 'warn' : 'neutral', t: ramp == null ? '' : ramp > 0.12 ? 'Building quickly' : ramp > 0.01 ? 'Building' : ramp < -0.05 ? 'Dropping' : 'Holding steady' });
-  signals.push({ k: 'HRV (7-day average)', v: d.hrv7 != null ? Math.round(d.hrv7) + ' ms' : '–', tone: hrvFlag === 'low' ? 'bad' : hrvFlag ? 'good' : 'neutral', t: hrvFlag == null ? 'Needs 2 weeks of overnight HRV' : hrvFlag === 'low' ? `Below your normal ${Math.round(d.hrvBand[0])}–${Math.round(d.hrvBand[2])} ms` : hrvFlag === 'high' ? 'Above your normal range' : 'Inside your normal range' });
+  const outD = d.hrvOutDays ? ` for ${d.hrvOutDays} day${d.hrvOutDays > 1 ? 's' : ''}` : '';
+  signals.push({ k: 'HRV (7-day average)', v: d.hrv7 != null ? Math.round(d.hrv7) + ' ms' : '–', tone: hrvFlag === 'low' ? 'bad' : hrvFlag === 'high' ? 'warn' : hrvFlag ? 'good' : 'neutral', t: hrvFlag == null ? 'Needs 2 weeks of overnight HRV' : hrvFlag === 'low' ? `Below your normal ${Math.round(d.hrvBand[0])}–${Math.round(d.hrvBand[2])} ms${outD}` : hrvFlag === 'high' ? `Above your normal ${Math.round(d.hrvBand[0])}–${Math.round(d.hrvBand[2])} ms${outD}: unusual, not a licence to push` : 'Inside your normal range' });
   signals.push({ k: 'Resting HR (7-day average)', v: d.rhr7 != null ? Math.round(d.rhr7) + ' bpm' : '–', tone: rhrFlag === 'high' ? 'bad' : rhrFlag ? 'good' : 'neutral', t: rhrFlag == null ? 'Needs 2 weeks of data' : rhrFlag === 'high' ? `Above your normal ${Math.round(d.rhrBand[0])}–${Math.round(d.rhrBand[2])} bpm` : 'Inside your normal range' });
   signals.push({ k: 'Sleep debt (7 nights)', v: sN ? fmtHM(sDebt) + ' h' : '–', tone: !sN ? 'neutral' : sDebt > 300 ? 'bad' : sDebt > 150 ? 'warn' : 'good', t: !sN ? 'No sleep data this week' : sN < 5 ? `From ${sN} recorded nights` : sDebt > 300 ? 'Large shortfall' : sDebt > 150 ? 'Some shortfall' : 'Close to your need' });
 
@@ -145,6 +153,11 @@ function sleepCoach(M, date, n) {
   else if (r.bedSd != null) tips.push({ tone: 'good', t: `Consistent bedtime: about ${fmtClock(r.bed, true)}, varying by ±${Math.round(r.bedSd)} minutes.` });
   if (r.restor != null && r.restor < 0.35) tips.push({ tone: 'warn', t: `Restorative sleep (deep + REM) was ${Math.round(r.restor * 100)}% of the night; 40–50% is typical. Late meals, alcohol and evening hard sessions reduce it.` });
   if (r.eff != null && r.eff < 0.85) tips.push({ tone: 'warn', t: `Sleep efficiency was ${Math.round(r.eff * 100)}%: a lot of time in bed awake. Go to bed only when sleepy, and keep the phone out of bed.` });
+  // time to fall asleep (Oura: 15–20 min is normal; much longer points to stress, screens or caffeine; the Watch only sees it once it detects you in bed)
+  const lats = detailed.filter(x => x.latency != null).map(x => x.latency);
+  if (lats.length >= 3) { r.latency = median(lats); if (r.latency >= 25) tips.push({ tone: 'warn', t: `It took you about ${Math.round(r.latency)} minutes to fall asleep most nights. 15–20 is normal; longer usually means a late screen, caffeine after 2 pm, a late hard session or a busy head. Wind down 30 min before bed.` }); }
+  // a teenager's need is higher than an adult's (AASM: 8–10 h at 13–18)
+  if (M.prof.age != null && M.prof.age < 18 && r.avgAsleep < 8 * 60) tips.push({ tone: r.avgAsleep < 7.5 * 60 ? 'bad' : 'warn', t: `Average ${fmtHM(r.avgAsleep)} h asleep. At ${M.prof.age} the recommendation is 8–10 h a night (AASM); for an athlete in school 8½–9½ h is the target, and short sleep is linked to more injuries in young athletes.` });
   if (r.recGap && r.recGap.good - r.recGap.short >= 5) tips.push({ tone: 'neutral', t: `When you sleep at least 90% of your need, your next-day recovery averages ${Math.round(r.recGap.good)}%, compared with ${Math.round(r.recGap.short)}% after short nights.` });
   // social jet lag: sleep midpoint on free days vs work days (Wittmann 2006); > 1 h is associated with worse sleep and metabolic health
   const mids = { wd: [], we: [] };
@@ -152,6 +165,32 @@ function sleepCoach(M, date, n) {
   if (mids.wd.length >= 4 && mids.we.length >= 2) { r.jetlag = Math.round(mean(mids.we) - mean(mids.wd)); if (Math.abs(r.jetlag) >= 60) tips.push({ tone: 'warn', t: `Social jet lag: your sleep midpoint is ${Math.abs(r.jetlag)} min ${r.jetlag > 0 ? 'later' : 'earlier'} on weekends than on weekdays. Keep the shift under an hour; the Monday-morning lag is real.` }); }
   r.tips = tips;
   return r;
+}
+
+// ---- tonight: when to be in bed (WHOOP Sleep Planner / Garmin Sleep Coach idea) ----
+// Wake time = your usual wake-up on that kind of day (school/work days Mon–Fri vs free days) over the last 3 weeks.
+// Need = baseline + today's strain + a share of the 2-week debt + 15 min before a key session or test.
+// Bed = wake − need ÷ efficiency − time to fall asleep. Three levels like WHOOP: all of it (100%), 85%, 70% ("get by").
+function sleepPlanner(d, M) {
+  const tomorrow = addDays(d.date, 1), wdT = parseYmd(tomorrow).getDay(), freeT = wdT === 0 || wdT === 6;
+  const ws = [], all = [], effs = [], lats = [];
+  for (let i = 0; i < 21; i++) {
+    const x = M.day[addDays(d.date, -i)]; if (!x || !x.sleep) continue;
+    const wd = parseYmd(x.date).getDay(), free = wd === 0 || wd === 6, w = minOfDayLms(x.sleep.le);
+    all.push(w); if (free === freeT) ws.push(w);
+    if (i < 7) { if (x.eff) effs.push(x.eff); if (x.latency != null) lats.push(x.latency); }
+  }
+  if (!all.length) return null;
+  const wake = ws.length >= 3 ? median(ws) : median(all);
+  const keys = M.plan && M.plan.sessions ? M.plan.sessions.filter(s => s.date === tomorrow && !s.isRest && ['hard', 'key', 'test', 'race'].includes(s.intensity)) : [];
+  const keyAdj = keys.length ? 15 : 0;
+  const debtPart = d.debt14 ? Math.min(60, Math.round(d.debt14 * 0.25)) : 0;
+  const need = M.prof.needBase + (d.strain != null ? Math.max(0, d.strain - 10) * 3 : 0) + debtPart + keyAdj;
+  const eff = effs.length ? clamp(mean(effs), 0.75, 0.98) : 0.9;
+  const latency = lats.length ? clamp(median(lats), 5, 40) : 10;
+  const bedFor = n => (wake - n / eff - latency + 1440 * 2) % 1440;
+  return { need, wake, wakeSrc: ws.length >= 3 ? (freeT ? 'free days' : 'school days') : 'recent days', eff, latency, bed: bedFor(need),
+    levels: { peak: bedFor(need), perform: bedFor(need * 0.85), getBy: bedFor(need * 0.7) }, keySession: keys[0] || null, debtPart, keyAdj };
 }
 
 function intensityMix(M, date, days) {
@@ -204,7 +243,11 @@ function dailyInsights(M, date) {
   const out = [];
   const c = recoveryContributors(d).sort((a, b) => Math.abs(b.z * b.weight) - Math.abs(a.z * a.weight))[0];
   if (c && c.tone !== 'neutral') out.push({ tone: c.tone, h: (c.tone === 'good' ? 'Helping recovery: ' : 'Holding recovery back: ') + c.label.toLowerCase(), t: `${c.val}, ${Math.abs(c.z).toFixed(1)} standard deviations ${c.z >= 0 ? 'better' : 'worse'} than your 30-day normal.`, tab: 'recovery' });
-  if (d.hrvBand && d.hrv7 != null && d.hrv7 < d.hrvBand[0]) out.push({ tone: 'bad', h: 'HRV trending down', t: `Your 7-day HRV (${Math.round(d.hrv7)} ms) is below your normal range. Often a sign of accumulated fatigue, illness or stress.`, tab: 'recovery' });
+  if (d.hrvState === 'below') out.push({ tone: 'bad', h: 'HRV trending down', t: `Your 7-day HRV (${Math.round(d.hrv7)} ms) has been below your normal range for ${d.hrvOutDays} day${d.hrvOutDays > 1 ? 's' : ''}. Often a sign of accumulated fatigue, illness or stress.`, tab: 'recovery' });
+  else if (d.hrvState === 'above' && d.hrvOutDays >= 2) out.push({ tone: 'warn', h: 'HRV unusually high', t: `Your 7-day HRV (${Math.round(d.hrv7)} ms) has sat above your normal range for ${d.hrvOutDays} days. Far above normal is not “extra recovered”: with a low sleeping heart rate it is deep rest; otherwise it can precede illness. Don’t add intensity because of it.`, tab: 'recovery' });
+  // the one progression rule with evidence behind it: a run much longer than anything in the last 30 days
+  const lg = longRunGuard(M, date);
+  if (lg.length) { const g = lg[0]; out.push({ tone: g.pct > 0.25 ? 'bad' : 'warn', h: `Long-run jump: “${g.s.title}” ${g.s.date === date ? 'today' : fmtDayShort(g.s.date)}`, t: `${g.planM ? fmtKm(g.planM) : g.planMin + ' min'} planned, but your longest run in the 30 days before it is ${g.ref.distM ? fmtKm(g.ref.distM) : ''}${g.ref.durS ? ' (' + fmtDurLong(g.ref.durS / 60) + ')' : ''}: a ${Math.round(g.pct * 100)}% jump. Runs more than 10% beyond the longest of the last month are the strongest single predictor of running injuries (Frandsen 2025). Cap it at about ${g.ref.distM ? fmtKm(Math.round(g.ref.distM * 1.1 / 100) * 100) : Math.round(g.ref.durS / 60 * 1.1) + ' min'} and build from there.`, tab: 'plan' }); }
   const sc = sleepCoach(M, date, 7);
   if (sc && sc.tips.length) out.push({ tone: sc.tips[0].tone, h: 'Sleep', t: sc.tips[0].t, tab: 'sleep' });
   const ps = (M.plan && M.plan.sessions) || [];
@@ -238,14 +281,95 @@ function bodySignals(M, date) {
   const have = rows.filter(r => r.z != null), off = rows.filter(r => r.state === 'off'), edge = rows.filter(r => r.state === 'edge');
   const score = off.length + 0.5 * edge.length;
   const level = have.length < 2 ? 'unknown' : off.length >= 2 && score >= 2.5 ? 'alert' : score >= 2 ? 'watch' : 'ok';
-  // two nights in a row?
+  // the night before: how many signals were already drifting, and which of today's are off for the second night
+  const p = M.day[addDays(date, -1)];
+  const pOff = s => { const c = p && p.cal && p.cal[s.key]; return !!(c && c.z != null && c.z * s.dir >= 1.5); };
   let streak = 0;
-  if (level === 'alert' || level === 'watch') {
-    const p = M.day[addDays(date, -1)];
-    if (p && p.cal) { const po = BODY_SIG.filter(s => { const c = p.cal[s.key]; return c && c.z != null && c.z * s.dir >= 1.5; }).length; if (po >= 2) streak = 2; }
-  }
+  if (level === 'alert' || level === 'watch') { const po = BODY_SIG.filter(pOff).length; if (po >= 2) streak = 2; }
+  for (const r of rows) r.again = r.state === 'off' && pOff(r);
   const J = M.journal || {}, prevJ = J[addDays(date, -1)] || {}, todayJ = J[date] || {};
-  return { level, rows, have: have.length, off: off.length, edge: edge.length, streak, sick: !!(todayJ.sick || prevJ.sick || (M.plan && M.plan.sickOn && M.plan.sickOn(date))), alcohol: !!prevJ.alcohol, hardDay: (M.day[addDays(date, -1)] || {}).strain >= 16 };
+  const sick = !!(todayJ.sick || prevJ.sick || (M.plan && M.plan.sickOn && M.plan.sickOn(date)));
+  // graded like Oura's Symptom Radar: Minor = one signal clearly off for a second night, or several drifting on one night;
+  // Major = several off at once for a second night. Major switches on Rest mode (strain target and the key session drop); being sick is handled by the plan.
+  const again = rows.filter(r => r.again).length;
+  const grade = have.length < 2 ? 'unknown' : level === 'alert' && (streak || again >= 2) ? 'major' : level === 'alert' || level === 'watch' || again >= 1 ? 'minor' : 'none';
+  const restMode = grade === 'major' ? 'rest' : grade === 'minor' ? 'easy' : null;
+  return { level, grade, restMode, rows, have: have.length, off: off.length, edge: edge.length, again, streak, sick, alcohol: !!prevJ.alcohol, hardDay: (M.day[addDays(date, -1)] || {}).strain >= 16 };
+}
+
+// ---- day status: green / yellow / red, and what it does to today's session (TrainerRoad's "Red Light Green Light" idea) ----
+// Readiness never adds intensity. Green = train as planned. Yellow = the day's main session becomes an easy one of the same
+// length. Red = rest. Inputs: recovery with the morning check-in, the two-sided HRV band, the body-signal radar, last night's
+// sleep, being sick or easing back in. The change is written into the plan only when you accept it (one tap), and can be undone.
+const DAY_STATUS = { green: { label: 'Green day', word: 'green' }, yellow: { label: 'Yellow day', word: 'yellow' }, red: { label: 'Red day', word: 'red' }, none: { label: 'No status yet', word: 'none' } };
+function dayStatus(M, date) {
+  const d = M.day[date] || { date };
+  const c = coachFor(d, M);
+  const b = d.cal ? bodySignals(M, date) : null;
+  const z = recoveryZone(c.recUsed);
+  const known = !!(z || (b && b.grade !== 'unknown') || d.hrvState || c.sick);
+  // the recovery score: red zone → red; the lower half of yellow (34–49) → yellow; 50–66 only tips the day when something else holds it too
+  const why = [];
+  let lvl = c.hold || 0;
+  if (z === 'lo') { lvl = 2; why.push(`recovery ${c.recUsed}%`); }
+  else if (z === 'mid' && c.recUsed < 50) { lvl = Math.max(lvl, 1); why.push(`recovery ${c.recUsed}%`); }
+  else if (z === 'mid' && lvl >= 1) why.push(`recovery ${c.recUsed}%`);
+  why.push(...(c.holdWhy || []));
+  const color = !known ? 'none' : lvl === 2 ? 'red' : lvl === 1 ? 'yellow' : 'green';
+  // what it does to the plan
+  const planned = c.planned.filter(s => !s.isRest);
+  const lvlOf = s => (PLAN_INTENSITY[s.intensity] ?? 2) - (s.sportKey === 'strength' || s.sportKey === 'mobility' ? 1.5 : 0) - (s.optional ? 2 : 0);
+  const P = planned.slice().sort((a, b2) => lvlOf(b2) - lvlOf(a))[0] || null;
+  const swapped = M.plan.sessions.filter(s => s.date === date && s.swap);
+  const race = planned.find(s => s.intensity === 'race');
+  const open = planned.filter(s => s.status !== 'done' && s.status !== 'partial');   // sessions already done are left alone
+  let action = null;
+  if (swapped.length) action = { kind: 'swapped', sessions: swapped };
+  else if (race && color !== 'green') action = { kind: 'race', session: race };
+  else if (color === 'red' && open.length && !c.sick) action = { kind: 'rest', sessions: open, proposals: open.map(s => restProposal(s, why)) };
+  else if (color === 'yellow' && P && open.includes(P) && (PLAN_INTENSITY[P.intensity] ?? 2) >= 2 && !(P.sportKey === 'strength' || P.sportKey === 'mobility')) action = { kind: 'easy', session: P, proposals: [easyProposal(M, P, why)] };
+  const text = color === 'none' ? 'Needs a recovery score or a few nights of body signals.'
+    : color === 'green' ? (planned.length ? 'Train as planned.' : c.rest ? 'Rest day as planned.' : 'Nothing planned; a normal training day is fine.')
+    : color === 'yellow' ? (action && action.kind === 'easy' ? `Keep the day, lose the intensity: “${P.title}” becomes an easy ${SPORT_LABEL[P.sportKey].toLowerCase()} of the same length.` : action && action.kind === 'race' ? 'Race day: warm up properly and decide by feel in the first minutes.' : action && action.kind === 'swapped' ? 'Easy day.' : P && !open.includes(P) ? `“${P.title}” is already done; keep the rest of the day easy.` : planned.length ? 'Today is already easy; keep it that way and finish feeling fresher than you started.' : 'Keep anything you do easy.')
+    : (action && action.kind === 'race' ? 'Race day on a red: start conservatively and stop if you feel ill.' : c.sick ? 'Sick: planned sessions are excused.' : action && action.kind === 'swapped' ? 'Rest today.' : open.length ? 'Rest today. The session is not lost; the plan has room for it.' : planned.length ? 'Done for today; nothing more.' : 'Rest today.');
+  return { color, ...DAY_STATUS[color], why, text, action, rec: c.recUsed, radar: b ? b.grade : null, hrv: d.hrvState, hrvDays: d.hrvOutDays || 0, target: c.target, planned, hold: c.hold || 0 };
+}
+// "6×800 m" in the old title would make the coach look for reps in the easy run, so the structure is spelled out in words
+const plainTitle = t => String(t || '').replace(/(\d)\s*[×x]\s*(\d)/g, '$1 by $2');
+function easyProposal(M, s, why) {
+  const run = s.sportKey === 'run', Z = M.zones && M.zones.run;
+  const z2 = run && Z ? zoneRangeText(Z, 2) : null;
+  const sport = (SPORT_LABEL[s.sportKey] || 'session').toLowerCase();
+  return { id: s.id, title: `Easy ${sport} (was: ${plainTitle(s.title)})`, intensity: 'easy', durationMin: s.durationMin || null,
+    target: z2 ? `${z2} (Z2)` : '',
+    details: `Yellow day (${why.join(', ')}): same length, all in Zone 2, no intervals${s.sportKey === 'swim' ? ', drills are fine' : ''}. The hard version waits for a green day.`,
+    swap: { kind: 'easy', from: s.title, fromIntensity: s.intensity, fromTarget: s.target || null, fromDetails: s.details || null, why: why.join(', ') } };
+}
+function restProposal(s, why) {
+  return { id: s.id, title: `Rest (was: ${plainTitle(s.title)})`, intensity: 'rest', target: '', distance: '', durationMin: 0, details: `Red day (${why.join(', ')}). Sleep, eat, drink; a short walk is fine.`,
+    swap: { kind: 'rest', from: s.title, fromIntensity: s.intensity, fromTarget: s.target || null, fromDetails: s.details || null, why: why.join(', ') } };
+}
+
+// ---- long-run guard: the one progression rule with injury evidence (Frandsen 2025: a run > 10% longer than the longest
+// of the previous 30 days was the strongest predictor; weekly % jumps and the load ratio were not) ----
+function longestRun30(M, date, excludeGid) {
+  let best = null;
+  for (let k = 1; k <= 30; k++) { const x = M.day[addDays(date, -k)]; if (!x) continue; for (const a of x.acts) if (a.sport === 'run' && a.gid !== excludeGid && (a.distM || 0) >= 1000 && (!best || a.distM > best.distM)) best = a; }
+  return best;
+}
+function longRunGuard(M, date) {
+  const out = [];
+  const ps = (M.plan && M.plan.sessions) || [];
+  for (const s of ps) {
+    if (s.sportKey !== 'run' || s.isRest || s.date < date || daysBetween(date, s.date) > 7 || s.status === 'done') continue;
+    const km = s.distance && String(s.distance).match(/(\d+(?:[.,]\d+)?)\s*km/i);
+    const planM = km ? parseFloat(km[1].replace(',', '.')) * 1000 : null;
+    const ref = longestRun30(M, s.date);
+    if (!ref) continue;
+    if (planM) { if (planM > ref.distM * 1.1) out.push({ s, planM, ref, pct: planM / ref.distM - 1 }); }
+    else if (s.durationMin && ref.durS) { const mins = ref.durS / 60; if (s.durationMin > mins * 1.1 && s.durationMin >= 50) out.push({ s, planMin: s.durationMin, ref, pct: s.durationMin / mins - 1 }); }
+  }
+  return out;
 }
 
 // ---- short morning summary (iPhone notification after the Shortcut syncs; standalone /api/ingest) ----
@@ -263,5 +387,11 @@ function morningSummary(M, date) {
   const b = typeof bodySignals === 'function' && M.day[date] && M.day[date].cal ? bodySignals(M, date) : null;
   if (b && b.level === 'alert') l4 = 'Several body signals are off (HRV, resting HR, breathing, temperature). Keep today easy. ' + l4;
   else if (b && b.level === 'watch') l4 = 'Some body signals are drifting; take it easy if you feel off. ' + l4;
-  return { title: d.rec != null ? `Recovery ${d.rec}% · ${c.head}` : c.head, body: [l1, l2, l3, l4].filter(Boolean).join('\n'), rec: d.rec, sleepScore: d.sleepScore, head: c.head, bodySignals: b ? b.level : null };
+  // the day status and what it would change
+  const ds = typeof dayStatus === 'function' ? dayStatus(M, date) : null;
+  const l5 = ds && ds.color !== 'none' ? `${ds.label}${ds.why.length ? ' (' + ds.why.join(', ') + ')' : ''}: ${ds.text}${ds.action && (ds.action.kind === 'easy' || ds.action.kind === 'rest') ? ' Open Baseline to accept the change.' : ''}` : null;
+  // tonight
+  const tn = typeof sleepPlanner === 'function' && M.day[date] ? sleepPlanner(M.day[date], M) : null;
+  const l6 = tn ? `Tonight: in bed by ${fmtClock(tn.bed, true)} for ${fmtHM(tn.need)} h${tn.keySession ? ` before “${tn.keySession.title}”` : ''}.` : null;
+  return { title: d.rec != null ? `Recovery ${d.rec}% · ${ds && ds.color !== 'none' ? ds.label : c.head}` : c.head, body: [l1, l2, l3, l5, l4, l6].filter(Boolean).join('\n'), rec: d.rec, sleepScore: d.sleepScore, head: c.head, bodySignals: b ? b.level : null, dayStatus: ds ? ds.color : null };
 }

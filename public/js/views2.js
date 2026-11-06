@@ -122,13 +122,13 @@ VIEWS.recovery = (v) => {
   ${statusPanelHtml(trainingStatus(M, S.date), false)}
   <div class="cols">
     <div class="panel"><div class="panel-h"><h2>HRV trend</h2><span class="aside">ms, overnight</span></div>
-      ${hasHrv ? `<div class="legend"><span><i style="background:var(--fg-2)"></i>Nightly</span><span><i style="background:var(--rec-hi)"></i>7-day average</span><span><i class="box" style="background:var(--rec-hi);opacity:.3"></i>Your normal range</span></div><div class="chart" id="c-hrvt"></div>` : '<p class="muted" style="margin:0">No HRV yet. It comes in once the iPhone Shortcut syncs your nights.</p>'}</div>
+      ${hasHrv ? `${hrvBandHtml(d)}<div class="legend"><span><i style="background:var(--fg-2)"></i>Nightly</span><span><i style="background:var(--rec-hi)"></i>7-day average</span><span><i class="box" style="background:var(--rec-hi);opacity:.3"></i>Your normal range</span></div><div class="chart" id="c-hrvt"></div>` : '<p class="muted" style="margin:0">No HRV yet. It comes in once the iPhone Shortcut syncs your nights.</p>'}</div>
     <div class="panel"><div class="panel-h"><h2>Resting HR trend</h2><span class="aside">bpm</span></div>
       ${hasRhr ? `<div class="legend"><span><i style="background:var(--fg-2)"></i>Daily</span><span><i style="background:var(--watch)"></i>7-day average</span><span><i class="box" style="background:var(--watch);opacity:.3"></i>Your normal range</span></div><div class="chart" id="c-rhrt"></div>` : '<p class="muted" style="margin:0">No resting heart rate in the last 60 days.</p>'}</div>
   </div>
   <div class="panel"><div class="panel-h"><h2>Last 30 days</h2>${recs.length ? `<span class="aside">${cnt.hi} green · ${cnt.mid} yellow · ${cnt.lo} red</span>` : ''}</div>
     ${recs.length ? '<div class="chart" id="c-r30"></div>' : '<p class="muted" style="margin:0">No recovery scores in the last 30 days.</p>'}
-    <p class="muted" style="font-size:12px;margin:8px 0 0">A 7-day HRV average that drops below your normal range for several days is one of the most reliable early signs of overreaching or illness, often before you feel it.</p></div>`;
+    <p class="muted" style="font-size:12px;margin:8px 0 0">A 7-day HRV average that sits outside your normal range for several days, below <i>or</i> above it, is one of the most reliable early signs of overreaching or illness, often before you feel it (Vesterinen 2016; Garmin calls both “unbalanced”).</p></div>`;
   const labels = days.map(x => fmtDayShort(x.date)), th = i => fmtDay(days[i].date);
   if (hasHrv) lineChart(v.querySelector('#c-hrvt'), { label: 'HRV trend', labels, fmtTip: x => Math.round(x) + ' ms', tipHead: th,
     series: [{ name: 'Nightly', values: days.map(x => x.hrv ?? null), color: 'var(--fg-2)' }, { name: '7-day', values: days.map(x => x.hrv7 ?? null), color: 'var(--rec-hi)' }],
@@ -142,17 +142,39 @@ VIEWS.recovery = (v) => {
 
 function bodySignalsHtml(M, date, full) {
   const b = bodySignals(M, date); if (!b) return '';
-  if (!full && b.level !== 'alert' && b.level !== 'watch') return '';
+  if (!full && b.level !== 'alert' && b.level !== 'watch' && b.grade !== 'minor') return '';
   const STATE = { off: ['Out of range', 'lo'], edge: ['At the edge', 'mid'], ok: ['In range', 'hi'], building: ['Baseline building', ''], missing: ['No reading', ''] };
-  const rows = b.rows.map(r => `<div class="bs-row"><span class="bs-dot ${STATE[r.state][1]}"></span><b>${esc(r.label)}</b><span class="num">${esc(r.now || '–')}</span><span class="muted">${r.usual ? 'usual ' + esc(r.usual) : r.state === 'building' ? r.n28 + ' of 10 nights' : ''}</span><span class="chip ${STATE[r.state][1]}">${STATE[r.state][0]}</span></div>`).join('');
+  const rows = b.rows.map(r => `<div class="bs-row"><span class="bs-dot ${STATE[r.state][1]}"></span><b>${esc(r.label)}</b><span class="num">${esc(r.now || '–')}</span><span class="muted">${r.usual ? 'usual ' + esc(r.usual) : r.state === 'building' ? r.n28 + ' of 10 nights' : ''}</span><span class="chip ${STATE[r.state][1]}">${STATE[r.state][0]}${r.again ? ' · 2nd night' : ''}</span></div>`).join('');
   const why = [b.alcohol ? 'you logged alcohol last night' : '', b.hardDay ? 'yesterday was a hard training day' : '', b.sick ? 'you logged feeling sick' : ''].filter(Boolean);
-  const head = b.level === 'alert' ? 'Several body signals are off' : b.level === 'watch' ? 'Some body signals are drifting' : b.level === 'unknown' ? 'Body signals' : 'Body signals in your normal range';
+  const head = b.level === 'alert' ? 'Several body signals are off' : b.level === 'watch' ? 'Some body signals are drifting' : b.level === 'unknown' ? 'Body signals' : b.grade === 'minor' ? 'One body signal off for a second night' : 'Body signals in your normal range';
+  const gradeChip = b.grade === 'major' ? '<span class="chip lo"><i></i>Major signs · Rest mode</span>' : b.grade === 'minor' ? '<span class="chip mid"><i></i>Minor signs · strain capped</span>' : b.grade === 'none' ? '<span class="chip hi"><i></i>No signs</span>' : '';
   const text = b.level === 'alert' || b.level === 'watch'
-    ? `${b.off + b.edge} of ${b.have} overnight measures moved away from your normal together${b.streak ? ', for the second night in a row' : ''}. This pattern often shows up with oncoming illness, heavy fatigue, alcohol, heat or poor sleep${why.length ? ' (' + why.join('; ') + ')' : ''}. It isn't a diagnosis. Keep today easy, and if you feel unwell, rest and see a doctor if it persists.`
+    ? `${b.off + b.edge} of ${b.have} overnight measures moved away from your normal together${b.streak ? ', for the second night in a row' : ''}. This pattern often shows up with oncoming illness, heavy fatigue, alcohol, heat or poor sleep${why.length ? ' (' + why.join('; ') + ')' : ''}. It isn't a diagnosis.${b.grade === 'major' ? ` Rest mode: the strain target is cut to at most 2–7 and today’s key session should wait.` : ' Keep today easy'}${b.grade !== 'major' ? ', and if you feel unwell, rest and see a doctor if it persists.' : ' If you feel unwell, rest and see a doctor if it persists.'}`
     : b.level === 'unknown' ? 'Needs about 10 nights of HRV, resting heart rate, breathing rate or wrist temperature to know your normal range.'
-    : 'Overnight HRV, resting heart rate, breathing rate and wrist temperature are within your usual range.';
-  return `<div class="panel bs ${b.level}"><div class="panel-h"><h2>${esc(head)}</h2>${full ? '<span class="aside">vs your last 28 nights</span>' : `<span class="aside"><button class="btn sm ghost" data-action="tab" data-tab="recovery">Details</button></span>`}</div>
+    : b.grade === 'minor' ? `${b.rows.filter(r => r.again).map(r => r.label).join(' and ')} out of range for the second night. One signal alone is common; two nights of it is worth an easier day (the strain target is capped at 10).`
+    : 'Overnight HRV, resting heart rate, breathing rate and wrist temperature are within your usual range. Graded like Oura’s Symptom Radar: minor = one signal off two nights running or several drifting at once; major = several off for a second night.';
+  return `<div class="panel bs ${b.level}"><div class="panel-h"><h2>${esc(head)}</h2>${gradeChip}${full ? '<span class="aside">vs your last 28 nights</span>' : `<span class="aside"><button class="btn sm ghost" data-action="tab" data-tab="recovery">Details</button></span>`}</div>
     <p class="sub" style="margin:0 0 10px;font-size:13px">${esc(text)}</p>${full || b.level === 'alert' ? `<div class="bs-rows">${rows}</div>` : ''}</div>`;
+}
+
+// ---- day status strip: green / yellow / red with the one-tap change to today's plan ----
+function dayStatusHtml(M, date) {
+  if (typeof dayStatus !== 'function') return '';
+  const ds = dayStatus(M, date); if (!ds || ds.color === 'none') return '';
+  const a = ds.action, isToday = date === M.today;
+  let act = '';
+  if (a && a.kind === 'swapped') act = `<span class="muted">${a.sessions.map(s => `“${esc(s.swap.from)}” → ${esc(s.title.replace(/\s*\(was:.*\)$/, ''))}`).join('; ')}</span><button class="btn sm ghost" data-action="day-swap-undo" data-date="${date}">Undo</button>`;
+  else if (a && (a.kind === 'easy' || a.kind === 'rest') && isToday) act = `<button class="btn sm ${ds.color === 'red' ? 'danger' : 'primary'}" data-action="day-swap" data-date="${date}">${a.kind === 'easy' ? `Make “${esc(a.session.title)}” easy` : `Make today a rest day`}</button>`;
+  return `<div class="ds ds-${ds.color}" data-status="${ds.color}"><div><span class="ds-dot"></span><b>${esc(ds.label)}</b>${ds.why.length ? `<span class="muted"> · ${esc(ds.why.join(' · '))}</span>` : ''}<div class="ds-t">${esc(ds.text)}${a && (a.kind === 'easy' || a.kind === 'rest') && isToday ? ' One tap writes it into the plan; it can be undone.' : ''}</div></div>${act ? `<div class="ds-a">${act}</div>` : ''}</div>`;
+}
+// HRV band line for the Recovery tab: two-sided, with the day counter and the week's spread
+function hrvBandHtml(d) {
+  if (!d || d.hrv7 == null || !d.hrvBand) return '';
+  const st = d.hrvState, days = d.hrvOutDays || 0;
+  const word = st === 'inside' ? 'inside' : st === 'below' ? 'below' : 'above';
+  const tone = st === 'inside' ? 'hi' : st === 'below' ? 'lo' : 'mid';
+  const cvTxt = d.hrvCv7 != null ? `Night-to-night spread ${d.hrvCv7.toFixed(0)}%${d.recParts && d.recParts.hrv && d.recParts.hrv.cv === 'strain' ? ' and rising while the average falls: struggling to adapt' : d.recParts && d.recParts.hrv && d.recParts.hrv.cv === 'coping' ? ', steadier than usual: coping well' : ''}.` : '';
+  return `<div class="hrv-band"><span><span class="chip ${tone}"><i></i>7-day HRV ${Math.round(d.hrv7)} ms, ${word} your band</span></span><span>Band <b>${Math.round(d.hrvBand[0])}–${Math.round(d.hrvBand[2])} ms</b> (60-night mean ± ½ SD)</span>${days ? `<span><b>${days} day${days > 1 ? 's' : ''}</b> ${word} it</span>` : ''}${cvTxt ? `<span class="muted">${esc(cvTxt)}</span>` : ''}${st === 'above' ? '<span class="muted">Above is not “more recovered”: with a low sleeping HR it is rest; otherwise watch how you feel.</span>' : ''}</div>`;
 }
 
 // ---------- Coach panel: every session and the day judged against the plan and the goal ----------

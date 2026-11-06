@@ -87,6 +87,24 @@ function raceModel(M, D) {
     planRaceCtl: raceRow ? raceRow.plan : null, pl, bgLoad, tests, sched, thresholds: currentThresholds(tests), paceUpdate, swim: swimModel(M, D, race, tests) };
 }
 
+// ---- run race pacing: per-km targets for the goal time, first km held at goal pace (the usual 10 km mistake is a fast first km) ----
+// Plan: km 1 at goal pace + 3 s (settle, find the rhythm), middle kms even, last km "whatever is left"; the middle pace is set so
+// the splits add up to the middle of the goal range. Heart rate is a check, not the target: pace is what the clock measures.
+function racePacing(M) {
+  const G = M.goals || goalsFor(M), g = G.run; if (!g || !g.distM || !g.lo) return null;
+  const n = Math.round(g.distM / 1000); if (n < 3 || n > 50) return null;
+  const lo = g.lo, hi = g.hi || g.lo, mid = (lo + hi) / 2, paceMid = mid / g.distM * 1000;
+  const first = paceMid + 3, last = paceMid - 5, midPace = (mid - first - last) / (n - 2);
+  const km = []; let cum = 0;
+  for (let i = 1; i <= n; i++) { const p = i === 1 ? first : i === n ? last : midPace; cum += p; km.push({ i, p, cum, note: i === 1 ? 'no faster than goal pace: settle in' : i === n ? 'whatever is left' : i === Math.ceil(n / 2) ? 'halfway: should feel hard but controlled' : i === n - 1 ? 'hold on; this is where the goal is won' : '' }); }
+  const Z = M.zones, hr = Z && Z.hr && Z.hr.bounds ? Z.hr.bounds : null;
+  const run = Z && Z.run;
+  const zoneOf = run && typeof runZoneOf === 'function' ? runZoneOf(paceMid, run) : null;
+  return { race: g.race, date: g.date, days: g.days, distM: g.distM, n, lo, hi, mid, paceLo: hi / g.distM * 1000, paceHi: lo / g.distM * 1000, paceMid, km,
+    hrTxt: hr ? `heart rate will sit around ${hr[2]}–${hr[3]} bpm (Z4) and drift above ${hr[3]} after halfway; that is normal, run the pace` : null, zone: zoneOf,
+    warmup: `15 min easy jog, 3–4 × 20 s build-ups to race pace, done 10 min before the start`, taperNote: g.days <= 14 ? 'Race week: keep the two or three short race-pace efforts in, cut everything else; nothing new.' : null };
+}
+
 // ---- swim: critical swim speed from tests, predicted goal time, training pace trend ----
 function swimGoal(race) {
   const g = (race && (race.goal || '')) || '';

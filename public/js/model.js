@@ -150,7 +150,9 @@ function buildModel(D) {
   else if (prof.stravaHrMax) { hrMax = prof.stravaHrMax; hrMaxSrc = 'Strava zones'; }
   else if (metaA.hrMaxEst) { hrMax = metaA.hrMaxEst; hrMaxSrc = 'your Apple Watch data'; }
   else if (age) { hrMax = Math.round(208 - 0.7 * age); hrMaxSrc = 'your age'; }
-  const needBase = (prof.sleepNeedH || 7.75) * 60;
+  // sleep need baseline: your own setting, else by age (AASM: 8–10 h at 13–18, so 8½ h for a teenager in training; 7–9 h for adults)
+  const needDefault = age != null && age < 18 ? 8.5 : age != null && age < 26 ? 8 : 7.75;
+  const needBase = (prof.sleepNeedH || needDefault) * 60;
   const zb = Array.isArray(prof.stravaZones) && prof.stravaZones.length >= 4 ? prof.stravaZones.map(Number) : null;
 
   const days = {}, appleW = [], stravaA = [];
@@ -242,6 +244,8 @@ function buildModel(D) {
         day.eff = s.inBed ? s.asleep / s.inBed : null;
         const prevW = recentWindows.filter(w => di - w.di <= 4);
         day.cons = prevW.length ? mean(prevW.map(w => clockIoU(s, w))) : null;
+        // time to fall asleep: awake minutes at the start of the Watch's sleep session (segments are [offset, minutes, stage]; 0 = awake)
+        if (Array.isArray(s.segs) && s.segs.length) { let lat = 0; for (const g of s.segs) { if (g[2] === 0) lat += g[1]; else break; } day.latency = Math.round(lat); }
       }
     }
     const bS = baselineOf(win('shr'));
@@ -337,6 +341,7 @@ function applyPlanEdits(raw, E, plans, weeks, today) {
       if (e.deleted) { removed.push({ ...s, removedBy: 'deleted' }); continue; }
       const orig = {}; for (const k of SESSION_EDIT_FIELDS) if (e[k] != null && e[k] !== s[k]) { orig[k] = s[k]; }
       s = { ...s, ...Object.fromEntries(SESSION_EDIT_FIELDS.filter(k => e[k] != null).map(k => [k, e[k]])), edited: orig };
+      if (e.swap) s.swap = e.swap;                       // changed by the day status (yellow → easy, red → rest)
       if (e.date && e.date !== s0.date) Object.assign(s, home(e.date), { order: 50 });
     }
     const rb = blocks.find(b => b.kind === 'replace' && inB(b, s.date) && (!b.scope || b.scope === 'all' || sportOf(s.sport || s.title || '') === b.scope));
@@ -417,7 +422,11 @@ function buildPlan(D, actsByDay, today) {
   return { meta: curPlan ? curPlan.meta : null, plans, curPlan, weeks, curWeek, sessions, removed: ed.removed, blocks: ed.blocks, sickToday: ed.sickOn(today), recentSick: ed.recentSick, sickOn: ed.sickOn, compliance: past.length ? (done + 0.5 * partial) / past.length : null, pastCount: past.length };
 }
 
-// Day guidance that combines recovery with the planned session
+// Day guidance that combines recovery with the planned session.
+// One "hold" level (0 none, 1 hold back, 2 rest) collects everything that is not the recovery score itself: body signals off for a second night
+// (Rest mode), the 7-day HRV outside your band on either side, a short night, easing back after illness. It caps the strain target and
+// colours the day (dayStatus in insights.js reads it), so the guidance text, the target and the green/yellow/red never disagree.
+const HOLD_TARGET = { 1: [10, 14], 2: [4, 10] };
 function coachFor(day, model) {
   // the morning check-in counts as much as the physiology (Saw 2016): feeling bad downgrades the day's guidance one step
   const j = day && model.journal ? model.journal[day.date] : null;
@@ -426,7 +435,7 @@ function coachFor(day, model) {
   const rec0 = day ? day.rec : null;
   const rec = rec0 != null && feelBad ? Math.min(rec0, recoveryZone(rec0) === 'hi' ? 60 : 30) : rec0 == null && feelBad ? 25 : rec0;
   const z = recoveryZone(rec);
-  const target = strainTarget(rec);
+  let target = strainTarget(rec);
   const planned = model.plan.sessions.filter(s => s.date === (day && day.date) && !s.isRest);
   const rest = model.plan.sessions.find(s => s.date === (day && day.date) && s.isRest);
   const lvlOf = s => (PLAN_INTENSITY[s.intensity] ?? 2) - (s.sportKey === 'strength' || s.sportKey === 'mobility' ? 1.5 : 0) - (s.optional ? 2 : 0);
@@ -440,24 +449,50 @@ function coachFor(day, model) {
     body = sick.type === 'injury' ? 'Planned sessions are excused. Skip anything that loads the injured area; pain-free movement for the rest of the body is fine if it feels good. If it isn’t improving, have it checked.'
       : sick.type === 'fever' ? 'Planned sessions are excused. With a fever, body aches or chest symptoms, don’t train at all. Rest, drink, sleep. Train again only once you’ve been fever-free for at least a day without medication, and see a doctor if it’s getting worse or not improving.'
       : 'Planned sessions are excused. With symptoms only above the neck (runny nose, mild sore throat) and no fever, a short easy walk or very easy spin is fine if you feel like it; otherwise rest. If it moves to your chest or you get a fever, stop completely.';
-    return { head, body, target: [0, 4], planned, rest, sick };
+    return { head, body, target: [0, 4], planned, rest, sick, hold: 2, holdWhy: [sick.type === 'injury' ? 'marked injured' : 'marked sick'], recUsed: rec };
   }
-  if (rec == null) {
+  // ---- what holds the day back, beyond the score ----
+  let hold = 0; const holdWhy = [], notes = [];
+  const bump = (n, why) => { hold = Math.max(hold, n); holdWhy.push(why); };
+  // Rest mode (Oura's Symptom Radar idea): body signals off for a second night, regardless of the score
+  const radar = day && day.cal && typeof bodySignals === 'function' ? bodySignals(model, day.date) : null;
+  const restMode = radar ? radar.restMode : null;
+  if (restMode === 'rest') { bump(2, `${radar.off} body signals off${radar.streak || radar.again ? ' for a second night' : ''}`); notes.push(`Rest mode: ${radar.off} overnight signals are off${radar.streak || radar.again ? ' for the second night' : ''} (${radar.rows.filter(r => r.state === 'off').map(r => r.label.toLowerCase()).join(', ')}). That pattern precedes most colds; the strain target is cut until they return to normal.`); }
+  else if (restMode === 'easy') { const nm = radar.rows.filter(r => r.again).map(r => r.label.toLowerCase()); bump(1, nm.length ? `${nm.join(' and ')} off for a second night` : 'body signals drifting'); notes.push(`Body signals are drifting (${radar.rows.filter(r => r.state !== 'ok' && r.z != null).map(r => r.label.toLowerCase()).join(', ')}), so the strain target is capped today.`); }
+  // the 7-day HRV outside your band on either side (Vesterinen 2016; Garmin "Unbalanced"); far above with a low sleeping HR is rest, not a warning
+  if (day && day.hrvState && day.hrvState !== 'inside' && (day.hrvOutDays || 0) >= 2) {
+    const shrLow = day.cal && day.cal.shr && day.cal.shr.zs7 != null && day.cal.shr.zs7 <= -0.5;
+    if (day.hrvState === 'below') { bump(day.hrvOutDays >= 5 ? 2 : 1, `7-day HRV below your band for ${day.hrvOutDays} days`); notes.push(`Your 7-day HRV has been below your normal band for ${day.hrvOutDays} days: accumulated fatigue, stress or something brewing. Hold intensity until it is back inside.`); }
+    else if (!shrLow) { bump(1, `7-day HRV above your band for ${day.hrvOutDays} days`); notes.push(`Your 7-day HRV has sat above your normal band for ${day.hrvOutDays} days without a lower sleeping heart rate. That is unusual rather than “extra recovered” and sometimes precedes a cold: no added intensity because of it.`); }
+    else notes.push(`7-day HRV above your band for ${day.hrvOutDays} days with a low sleeping heart rate: deep rest, not a warning.`);
+  }
+  // a clearly short night: under 80% of need and either under 6½ h or under 65% of need (a chronic small shortfall is the sleep coach's job, not a daily hold)
+  if (day && day.sleepMin != null && day.perf != null && day.perf < 0.8 && (day.sleepMin < 390 || day.perf < 0.65)) { bump(1, `slept ${fmtHM(day.sleepMin)} h of ${fmtHM(day.need)} needed`); notes.push(`Only ${fmtHM(day.sleepMin)} h of the ${fmtHM(day.need)} you needed: reaction time, pain tolerance and the appetite for hard work all drop after a night like that.`); }
+  if (easing) bump(1, `easing back after being ${rs.type === 'injury' ? 'injured' : 'sick'}`);
+  if (feelBad) bump(1, 'a poor morning check-in');
+  // several independent reasons to hold back add up to a rest day (a recovery score in the lower half of yellow counts as one)
+  if (hold === 1 && holdWhy.length + (z === 'mid' && rec < 50 ? 1 : 0) >= 3) hold = 2;
+  if (hold) target = [Math.min(target[0], HOLD_TARGET[hold][0]), Math.min(target[1], HOLD_TARGET[hold][1])];
+  // the day's effective zone: the score, pulled down by the hold
+  const zEff = hold === 2 ? 'lo' : hold === 1 && z === 'hi' ? 'mid' : z;
+  if (rec == null && !hold) {
     head = day && day.calibrating ? 'Calibrating your baseline' : 'No recovery score yet';
     body = day && day.calibrating ? 'Recovery needs at least 4 nights of heart-rate variability and resting heart rate. Keep wearing your Watch to sleep.' : 'Recovery comes from last night’s HRV and resting heart rate. Wear your Watch to sleep; once the iPhone Shortcut has synced the night, your score appears here.';
     if (P) body += lvl >= 3 ? ` Today’s plan has “${P.title}”: go by feel and keep the warm-up long.` : ` Today’s plan: “${P.title}”.`;
-  } else if (z === 'hi') {
+  } else if (zEff === 'hi') {
     head = 'Primed to perform';
     body = P ? (lvl >= 3 ? `Green light for “${P.title}”. Your body is ready for the hard work.` : `“${P.title}” is on the plan. You have room to push a little more if you feel good.`) : rest ? 'Planned rest day. Recovery is high, so an easy walk or mobility session fits well.' : 'A good day for a hard or long session.';
-  } else if (z === 'mid') {
-    head = 'Maintain';
-    body = P ? (lvl >= 3 ? `“${P.title}” is doable. Keep the warm-up long and stop the hard reps if heart rate climbs faster than usual.` : `“${P.title}” fits today. Stay in the planned zones.`) : 'Moderate training is fine. Keep intensity in check.';
+  } else if (zEff === 'mid') {
+    head = hold && z === 'hi' ? 'Hold back a little' : 'Maintain';
+    body = P ? (lvl >= 3 ? (hold ? `“${P.title}” is on the plan, but today is not the day for it: make it an easy session of the same length.` : `“${P.title}” is doable. Keep the warm-up long and stop the hard reps if heart rate climbs faster than usual.`) : `“${P.title}” fits today. Stay in the planned zones.`) : 'Moderate training is fine. Keep intensity in check.';
   } else {
-    head = 'Prioritise recovery';
-    body = P ? (lvl >= 3 ? `Recovery is low for “${P.title}”. Swap it with an easier day this week, or do it as a Zone 2 session.` : `Keep “${P.title}” truly easy, or replace it with mobility.`) : 'Low recovery. Rest, sleep early, and keep any movement light.';
+    head = hold === 2 && z !== 'lo' ? 'Rest today' : 'Prioritise recovery';
+    body = P ? (lvl >= 3 ? `${hold === 2 ? 'Not the day' : 'Recovery is low'} for “${P.title}”. ${hold === 2 ? 'Rest; the plan has room for it later this week.' : 'Swap it with an easier day this week, or do it as a Zone 2 session.'}` : hold === 2 ? `Rest today; even “${P.title}” waits.` : `Keep “${P.title}” truly easy, or replace it with mobility.`) : 'Low recovery. Rest, sleep early, and keep any movement light.';
   }
   if (easing) body = `Easing back in after being ${rs.type === 'injury' ? 'injured' : 'sick'} (${rs.days} day${rs.days > 1 ? 's' : ''}): keep today easy and shorter than planned, and stop if symptoms come back. ` + body;
   if (feelBad) body = `You rated this morning ${j.readiness != null ? 'readiness ' + j.readiness + '/10' : ''}${j.fatigue >= 4 ? (j.readiness != null ? ', ' : '') + 'fatigue ' + j.fatigue + '/5' : ''}${j.soreness >= 4 ? ', soreness ' + j.soreness + '/5' : ''}: how you feel counts as much as the numbers, so today is held one step lower${rec0 != null && rec0 !== rec ? ` (recovery ${rec0}% treated as ${rec}%)` : ''}. ` + body;
-  else if (feelGood && z === 'mid') body += ' You rated yourself ready, so a planned hard session is fine; just don’t add to it.';
-  return { head, body, target: easing ? [Math.min(target[0], 6), Math.min(target[1], 11)] : target, planned, rest, easing: easing ? rs : null, feelBad: !!feelBad, recUsed: rec };
+  else if (feelGood && z === 'mid' && !hold) body += ' You rated yourself ready, so a planned hard session is fine; just don’t add to it.';
+  if (notes.length) body = notes.join(' ') + ' ' + body;
+  return { head, body, target: easing ? [Math.min(target[0], 6), Math.min(target[1], 11)] : target, planned, rest, easing: easing ? rs : null, feelBad: !!feelBad, recUsed: rec, restMode, hold, holdWhy, zEff };
 }
+

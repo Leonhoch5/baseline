@@ -66,6 +66,25 @@ const PLAN_EDIT_ACTIONS = {
     if (E.added.some(x => x.id === id)) E.added = E.added.filter(x => x.id !== id); else E.sessions[id] = { deleted: true };
     S.planEdit = null; await savePlanEdits(E);
   },
+  // the day status's one-tap change: yellow → the main session becomes easy, red → the day's sessions become rest
+  'day-swap': async b => {
+    const M = S.model, date = b.dataset.date || M_today(); if (!M) return;
+    const ds = dayStatus(M, date), a = ds && ds.action;
+    if (!a || !a.proposals || !a.proposals.length) return;
+    const E = curEdits();
+    for (const p of a.proposals) {
+      const prev = E.sessions[p.id] || null;
+      E.sessions[p.id] = clean({ ...(prev || {}), deleted: null, title: p.title, intensity: p.intensity, details: p.details, target: p.target, distance: p.distance, durationMin: p.durationMin ?? (prev && prev.durationMin) ?? null,
+        swap: { ...p.swap, status: ds.color, date, at: new Date().toISOString(), prev: prev && Object.keys(prev).length ? prev : null } });
+    }
+    await savePlanEdits(E);
+  },
+  'day-swap-undo': async b => {
+    const M = S.model, date = b.dataset.date || M_today(); if (!M) return;
+    const E = curEdits();
+    for (const s of M.plan.sessions) if (s.date === date && s.swap) { const e = E.sessions[s.id]; if (!e) continue; if (e.swap && e.swap.prev) E.sessions[s.id] = e.swap.prev; else delete E.sessions[s.id]; }
+    await savePlanEdits(E);
+  },
   'ease-back': b => {
     const rs = S.model && S.model.plan.recentSick; if (!rs) return;
     const start = addDays(rs.end, 1) < M_today() ? M_today() : addDays(rs.end, 1);
@@ -157,7 +176,8 @@ function sessBadgesHtml(s) {
   const out = [];
   if (s.blockLabel) out.push(`<span class="chip pe-chip">${esc(s.blockLabel)}</span>`);
   if (s.added) out.push('<span class="chip pe-chip">added</span>');
-  if (s.edited && Object.keys(s.edited).length) out.push(`<span class="chip pe-chip" title="${esc('Plan said: ' + Object.entries(s.edited).map(([k, v]) => k + ' ' + (v ?? '–')).join(', '))}">changed</span>`);
+  if (s.swap) out.push(`<span class="chip ${s.swap.status === 'red' ? 'lo' : 'mid'}" title="${esc(`Changed by the day status on ${fmtDayShort(s.swap.date || s.date)}: ${s.swap.why || ''}. Plan said: ${s.swap.from}${s.swap.fromTarget ? ' at ' + s.swap.fromTarget : ''}.`)}"><i></i>${s.swap.status === 'red' ? 'red day' : 'yellow day'}</span>`);
+  else if (s.edited && Object.keys(s.edited).length) out.push(`<span class="chip pe-chip" title="${esc('Plan said: ' + Object.entries(s.edited).map(([k, v]) => k + ' ' + (v ?? '–')).join(', '))}">changed</span>`);
   return out.length ? ' ' + out.join(' ') : '';
 }
 

@@ -93,7 +93,7 @@ VIEWS.today = (v) => {
   if (!d || (!d.a && !d.acts.length)) {
     const c = coachFor(d || { date: S.date }, M);
     if (!c.planned.length && !c.rest) { v.innerHTML = noDayData(M); return; }
-    v.innerHTML = sickTodayHtml(M) + (S.planEdit && S.planEdit.mode === 'sick' ? planEditFormHtml(M) : '') + `<div class="panel coach"><div><div class="eyebrow">${S.date === M.today ? "Today's plan" : 'Plan for ' + esc(fmtDay(S.date))}</div><h2>${esc(c.head)}</h2><p>${esc(c.body)}</p>${plannedListHtml(c, M)}${S.date === M.today && !c.sick && !S.planEdit ? '<button class="btn sm ghost" style="margin-top:10px" data-action="pe-open" data-mode="sick">Feeling sick or injured?</button>' : ''}</div>
+    v.innerHTML = sickTodayHtml(M) + (S.planEdit && S.planEdit.mode === 'sick' ? planEditFormHtml(M) : '') + `<div class="panel coach"><div><div class="eyebrow">${S.date === M.today ? "Today's plan" : 'Plan for ' + esc(fmtDay(S.date))}</div><h2>${esc(c.head)}</h2><p>${esc(c.body)}</p>${dayStatusHtml(M, S.date)}${plannedListHtml(c, M)}${S.date === M.today && !c.sick && !S.planEdit ? '<button class="btn sm ghost" style="margin-top:10px" data-action="pe-open" data-mode="sick">Feeling sick or injured?</button>' : ''}</div>
       <div><div class="eyebrow">Strain target</div><p class="muted" style="font-size:13px;margin:8px 0 0">${c.target[0]}–${c.target[1]} on the 0–21 scale. It narrows once your recovery score is available.</p></div></div>
       <div class="panel"><div class="panel-h"><h2>No Watch data for this day yet</h2></div><p class="sub" style="margin:0 0 12px">Heart rate, sleep and HRV arrive when the iPhone Shortcut syncs; workouts arrive from Strava.</p>
       <div class="row"><button class="btn" data-action="drive-sync">Check iPhone data now</button><button class="btn ghost" data-action="tab" data-tab="data">Sync settings</button></div><div id="driveStatus" style="margin-top:10px">${driveStatusHtml(S.driveSync)}</div></div>` + coachPanelHtmlV2(M, S.date) + testDueNoticeHtml(M) + coachPanelHtml(M, S.date);
@@ -118,11 +118,11 @@ VIEWS.today = (v) => {
   ${sickTodayHtml(M)}
   ${S.planEdit && S.planEdit.mode === 'sick' ? planEditFormHtml(M) : ''}
   <div class="panel coach">
-    <div><div class="eyebrow">${S.date === M.today ? "Today's guidance" : 'Guidance for ' + esc(fmtDay(S.date))}</div><h2>${esc(coach.head)}</h2><p>${esc(coach.body)}</p>${sessionHtml}${S.date === M.today && !coach.sick && !S.planEdit ? '<button class="btn sm ghost" style="margin-top:10px" data-action="pe-open" data-mode="sick">Feeling sick or injured?</button>' : ''}</div>
+    <div><div class="eyebrow">${S.date === M.today ? "Today's guidance" : 'Guidance for ' + esc(fmtDay(S.date))}</div><h2>${esc(coach.head)}</h2><p>${esc(coach.body)}</p>${dayStatusHtml(M, S.date)}${sessionHtml}${S.date === M.today && !coach.sick && !S.planEdit ? '<button class="btn sm ghost" style="margin-top:10px" data-action="pe-open" data-mode="sick">Feeling sick or injured?</button>' : ''}</div>
     <div><div class="eyebrow">Strain target</div>
       <div class="scale" aria-label="Strain ${f1(d.strain)} with target ${lo} to ${hi}"><div class="band" style="left:${lo / 21 * 100}%;width:${(hi - lo) / 21 * 100}%"></div><div class="fill" style="width:${st / 21 * 100}%"></div><div class="mark" style="left:${clamp(st / 21 * 100, 4, 96)}%">${f1(d.strain)}</div></div>
       <div class="scale-ticks"><span>0</span><span>7</span><span>14</span><span>21</span></div>
-      <p class="muted" style="font-size:12px;margin:10px 0 0">The shaded band is the strain range that fits ${d.rec != null ? 'a ' + REC_WORD[z].toLowerCase() + ' recovery' : 'an average day'}: ${lo}–${hi}. ${st >= hi ? 'You have reached it.' : st >= lo ? 'You are in range.' : `About ${f1(lo - st)} more to reach it.`}</p>
+      <p class="muted" style="font-size:12px;margin:10px 0 0">The shaded band is the strain range that fits ${coach.hold && z !== 'lo' ? 'today’s hold (' + esc(coach.holdWhy[0] || '') + ')' : d.rec != null ? 'a ' + REC_WORD[z].toLowerCase() + ' recovery' : 'an average day'}: ${lo}–${hi}. ${st >= hi ? 'You have reached it.' : st >= lo ? 'You are in range.' : `About ${f1(lo - st)} more to reach it.`}</p>
     </div>
   </div>
   ${coachPanelHtmlV2(M, S.date)}
@@ -183,7 +183,7 @@ VIEWS.sleep = (v) => {
     <div class="panel"><div class="panel-h"><h2>Sleep need</h2></div>
       <div class="equation"><span><b>${fmtHM(np.base)}</b>baseline</span><span>+</span><span><b>${fmtHM(np.strain)}</b>for strain</span><span>+</span><span><b>${fmtHM(np.debt)}</b>for debt</span><span>=</span><span><b>${fmtHM(d.need)}</b>needed</span></div>
       ${d.debt14 != null ? `<p class="sub" style="margin:12px 0 0;font-size:13px">${d.debt14 >= 30 ? `<b style="color:var(--rec-lo)">Sleep debt: ${fmtHM(d.debt14)} h</b> behind your need over the last two weeks. A quarter of it is added to tonight’s need; a long night repays at most 1½ h at a time.` : d.debt14 > 0 ? `Sleep debt: ${fmtHM(d.debt14)} h, nearly cleared.` : '<b style="color:var(--rec-hi)">No sleep debt</b> left after last night.'}</p>` : ''}
-      ${tonight ? `<p class="muted" style="margin:14px 0 0;font-size:13px">Tonight: aim for <b style="color:var(--fg)">${fmtHM(tonight.need)}</b> asleep${tonight.keySession ? ` (15 min extra before “${esc(tonight.keySession.title)}”)` : ''}. To wake at ${fmtClock(tonight.wake, true)}, be in bed by <b style="color:var(--fg)">${fmtClock(tonight.bed, true)}</b>.</p>` : ''}
+      ${tonightHtml(tonight, M)}
     </div>
   </div>
   ${sleepScoreHtml(d)}
@@ -197,6 +197,7 @@ VIEWS.sleep = (v) => {
     <dl class="kv" style="margin:0">
       <div><dt>In bed</dt><dd>${fmtHM(sl.inBed)}</dd></div>
       <div><dt>Efficiency</dt><dd>${pct(d.eff)}</dd></div>
+      <div><dt>Fell asleep in</dt><dd>${d.latency != null ? d.latency + '<small>min' + (d.latency >= 25 ? ' · long' : d.latency <= 2 ? ' · as the Watch saw it' : '') + '</small>' : '–'}</dd></div>
       <div><dt>Consistency</dt><dd>${pct(d.cons)}<small>vs last 4 nights</small></dd></div>
       <div><dt>Wake-ups</dt><dd>${sl.wake ?? '–'}</dd></div>
       <div><dt>Restorative</dt><dd>${fmtHM(sl.deep + sl.rem)}<small>deep + REM</small></dd></div>
@@ -213,17 +214,12 @@ VIEWS.sleep = (v) => {
   drawSleepWindows(v, M, S.date);
   sleepBars(v.querySelector('#c-14'), last14);
 };
-function sleepPlanner(d, M) {
-  const ws = []; for (let i = 0; i < 7; i++) { const x = M.day[addDays(d.date, -i)]; if (x && x.sleep) ws.push(minOfDayLms(x.sleep.le)); }
-  if (!ws.length) return null;
-  const wake = median(ws);
-  // tonight's need: baseline + today's strain + a quarter of the 2-week debt (max 1 h) + 15 min before a key session or test
-  const tomorrow = M.plan && M.plan.sessions ? M.plan.sessions.filter(s => s.date === addDays(d.date, 1) && !s.isRest && ['hard', 'key', 'test', 'race'].includes(s.intensity)) : [];
-  const keyAdj = tomorrow.length ? 15 : 0;
-  const need = M.prof.needBase + (d.strain != null ? Math.max(0, d.strain - 10) * 3 : 0) + (d.debt14 ? Math.min(60, Math.round(d.debt14 * 0.25)) : 0) + keyAdj;
-  const effs = []; for (let i = 0; i < 7; i++) { const x = M.day[addDays(d.date, -i)]; if (x && x.eff) effs.push(x.eff); }
-  const eff = effs.length ? clamp(mean(effs), 0.75, 0.98) : 0.9;
-  return { need, wake, bed: (wake - need / eff + 1440 * 2) % 1440, keySession: tomorrow[0] || null, debtPart: d.debt14 ? Math.min(60, Math.round(d.debt14 * 0.25)) : 0 };
+// tonight's bedtime line (sleepPlanner lives in insights.js so the morning summary on the server can use it too)
+function tonightHtml(t, M) {
+  if (!t) return '';
+  const lv = t.levels;
+  const youth = M.prof.age != null && M.prof.age < 18;
+  return `<p class="muted" style="margin:14px 0 0;font-size:13px">Tonight: aim for <b style="color:var(--fg)">${fmtHM(t.need)}</b> asleep${t.keySession ? ` (15 min extra before “${esc(t.keySession.title)}”)` : ''}. You usually wake at ${fmtClock(t.wake, true)} on ${esc(t.wakeSrc)}, so be in bed by <b style="color:var(--fg)">${fmtClock(lv.peak, true)}</b> for all of it · ${fmtClock(lv.perform, true)} for 85% · ${fmtClock(lv.getBy, true)} to get by.${youth ? ' At your age the need is 8–10 h a night (AASM); 8½–9½ h is the target for an athlete in school.' : ''}</p>`;
 }
 function sleepBars(el, days) {
   barChart(el, {
@@ -478,7 +474,7 @@ VIEWS.plan = (v) => {
       ${meta.source || meta.notes ? `<p class="muted" style="font-size:12px;margin:10px 0 0">${esc([meta.source ? 'Imported from ' + meta.source + '.' : '', meta.notes || ''].join(' ').trim())}</p>` : ''}
       ${delHtml}</div>
     <div class="panel"><div class="eyebrow">Today</div><h2 style="font:700 20px/1.2 var(--font-body);letter-spacing:-.02em;margin:4px 0 6px">${esc(coach.head)}</h2><p class="sub" style="margin:0">${esc(coach.body)}</p>
-      <div class="row" style="margin-top:12px">${todayDay && todayDay.rec != null ? `<span class="chip ${recoveryZone(todayDay.rec)}"><i></i>Recovery ${todayDay.rec}%</span>` : ''}<span class="chip">Strain target ${coach.target[0]}–${coach.target[1]}</span></div></div>
+      <div class="row" style="margin-top:12px">${todayDay && todayDay.rec != null ? `<span class="chip ${recoveryZone(todayDay.rec)}"><i></i>Recovery ${todayDay.rec}%</span>` : ''}<span class="chip">Strain target ${coach.target[0]}–${coach.target[1]}</span></div>${dayStatusHtml(M, today)}</div>
   </div>
   ${paces.length ? (() => {
     const pu = M.race && M.race.paceUpdate && (!M.race.paceUpdate.planId || !sel || M.race.paceUpdate.planId === sel.id) ? M.race.paceUpdate : null;
@@ -530,8 +526,8 @@ VIEWS.data = (v) => {
   <div class="cols">
     <div class="panel"><div class="panel-h"><h2>Scoring settings</h2></div>
       <div class="form-row"><label for="setHrMax"><b>Max heart rate</b><span>Now ${M ? M.prof.hrMax : '–'} bpm, from ${esc(M ? M.prof.hrMaxSrc : 'default')}${prof.stravaHrMax && prof.hrMax ? ` · Strava zones suggest ${prof.stravaHrMax}` : ''}${mA && mA.hrMaxEst ? ` · Watch data suggests ${mA.hrMaxEst}` : ''}</span></label><input type="number" id="setHrMax" min="120" max="230" placeholder="auto" value="${prof.hrMax || ''}"></div>
-      <div class="form-row"><label for="setSleep"><b>Baseline sleep need</b><span>Hours of sleep you need on a rest day</span></label><input type="number" id="setSleep" min="5" max="11" step="0.25" placeholder="7.75" value="${prof.sleepNeedH || ''}"></div>
-      <div class="form-row"><label for="setBirth"><b>Birth year</b><span>Fallback for max heart rate</span></label><input type="number" id="setBirth" min="1920" max="2020" placeholder="${mA && mA.dob ? esc(mA.dob.slice(0, 4)) : 'optional'}" value="${prof.birthYear || ''}"></div>
+      <div class="form-row"><label for="setSleep"><b>Baseline sleep need</b><span>Hours of sleep you need on a rest day. Default by age: 8½ h under 18 (AASM: 8–10 h at 13–18), 8 h to 25, 7¾ h after${M && M.prof.age == null ? ' · set your birth year so the default fits' : ''}</span></label><input type="number" id="setSleep" min="5" max="11" step="0.25" placeholder="${M ? (M.prof.needBase / 60).toFixed(2).replace(/\.?0+$/, '') : '7.75'}" value="${prof.sleepNeedH || ''}"></div>
+      <div class="form-row"><label for="setBirth"><b>Birth year</b><span>Sets the sleep-need default and the age-based checks; fallback for max heart rate</span></label><input type="number" id="setBirth" min="1920" max="2020" placeholder="${mA && mA.dob ? esc(mA.dob.slice(0, 4)) : 'optional'}" value="${prof.birthYear || ''}"></div>
       <div class="row" style="margin-top:12px"><button class="btn primary" data-action="save-settings">Save settings</button><span class="muted" id="setStatus" style="font-size:12px"></span></div>
     </div>
     <div class="panel prose"><div class="panel-h"><h2>How the scores work</h2></div>
