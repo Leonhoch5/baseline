@@ -8,6 +8,17 @@ const BW_EXERCISE = /chin[- ]?up|pull[- ]?up|\bdips?\b|push[- ]?up|press[- ]?up|
 function isBodyweightExercise(name) { return BW_EXERCISE.test(String(name || '')); }
 function e1rmOf(kg, reps) { if (!(kg > 0) || !(reps > 0) || reps > 12) return null; return reps === 1 ? kg : kg * (1 + reps / 30); }
 
+// "6m 0s", "1h 2m", "45s", "1:00", "6 min" → seconds
+function parseDurationText(v) {
+  const t = String(v == null ? '' : v).trim(); if (!t) return null;
+  const mm = t.match(/^(\d+):(\d{2})(?::(\d{2}))?$/); if (mm) return mm[3] != null ? +mm[1] * 3600 + +mm[2] * 60 + +mm[3] : +mm[1] * 60 + +mm[2];
+  let sec = 0, hit = false;
+  const h = t.match(/(\d+(?:[.,]\d+)?)\s*h(?:ours?)?\b/i); if (h) { sec += parseFloat(h[1].replace(',', '.')) * 3600; hit = true; }
+  const m = t.match(/(\d+(?:[.,]\d+)?)\s*m(?:in(?:utes?)?)?\b/i); if (m) { sec += parseFloat(m[1].replace(',', '.')) * 60; hit = true; }
+  const se = t.match(/(\d+(?:[.,]\d+)?)\s*s(?:ec(?:onds?)?)?\b/i); if (se) { sec += parseFloat(se[1].replace(',', '.')); hit = true; }
+  if (hit) return Math.round(sec);
+  const n = t.match(/\d+(?:[.,]\d+)?/); return n ? Math.round(parseFloat(n[0].replace(',', '.'))) : null;
+}
 // the connector's exercise_sets → stored sets
 function setsFromConnector(list) {
   const sets = [], mg = {};
@@ -16,7 +27,7 @@ function setsFromConnector(list) {
     const num = v => { if (v == null) return null; const m = String(v.value != null ? v.value : v).match(/-?\d+(?:[.,]\d+)?/); return m ? parseFloat(m[0].replace(',', '.')) : null; };
     let kg = num(x.weight); if (kg != null && x.weight && /lb/i.test(String(x.weight.value))) kg = Math.round(kg * 0.45359 * 10) / 10;
     const r = num(x.reps);
-    let s = null; if (x.duration && x.duration.value != null) { const t = String(x.duration.value); const mm = t.match(/(\d+):(\d{2})/); s = mm ? +mm[1] * 60 + +mm[2] : (/min/i.test(t) ? num(x.duration) * 60 : num(x.duration)); }
+    const s = x.duration && x.duration.value != null ? parseDurationText(x.duration.value) : null;
     sets.push(clean({ e, kg: kg != null ? kg : null, r: r != null ? Math.round(r) : null, s: s != null ? Math.round(s) : null }));
     if (Array.isArray(x.muscle_groups) && x.muscle_groups.length && !mg[e]) mg[e] = x.muscle_groups.map(normMuscle);
   }
