@@ -43,10 +43,25 @@ function actRow(a, M, showDate) {
     <div style="min-width:0"><div class="n">${esc(a.name)}</div>
       <div class="m">${showDate ? `<span>${fmtDay(a.date)}</span>` : ''}${meta.map(m => `<span>${esc(m)}</span>`).join('')}</div>
       <div class="m" style="margin-top:4px">${srcBadges(a)}${a.merged ? '<span class="chip" title="Recorded by more than one source and merged">merged</span>' : ''}${actGradeChip(M, a)}</div>
-      ${zoneBar(a.hb, M.prof.hrMax, M.prof.zones)}
+      ${zoneBar(a.hb, M.prof.hrMax, M.prof.zones)}${gymRowHtml(a, M)}
     </div>
     <div class="r"><span class="pill" title="Strain (based on ${esc(a.loadBasis || '')})">${f1(a.strain)}</span></div>
   </div>`;
+}
+// the gym sets under a strength activity, with the paste box when they are missing or being edited
+function gymRowHtml(a, M) {
+  const isGym = a.sport === 'strength' || a.sport === 'hiit' || (a.sets && a.sets.length);
+  if (!isGym) return '';
+  const editing = S.setsEdit && S.setsEdit.gid === a.gid;
+  if (editing) {
+    const txt = S.setsEdit.text != null ? S.setsEdit.text : (a.sets || []).map(x => `${x.e} ${x.kg != null ? x.kg + ' kg' : ''}${x.r != null ? ' × ' + x.r : ''}${x.s != null ? ' ' + x.s + ' s' : ''}`.trim()).join('\n');
+    return `<div class="sets-edit" style="margin-top:8px"><textarea id="setsText" rows="6" placeholder="One set per line, or an exercise line followed by its sets:\nIncline Dumbbell Bench Press 22.5 kg × 7\nWeighted Chin-Up 7.5 kg × 5\nPull Up × 10\nRDL\n50 kg x 10, 70 x 8, 90 x 5">${esc(txt)}</textarea>
+      <div class="row" style="gap:6px;margin-top:6px"><button class="btn sm primary" data-action="sets-save" data-gid="${esc(a.gid)}">Save sets</button><button class="btn sm ghost" data-action="sets-cancel">Cancel</button>${S.setsEdit.err ? `<span class="muted" style="color:var(--rec-lo)">${esc(S.setsEdit.err)}</span>` : '<span class="muted" style="font-size:12px">Copy the exercises from the Strava app; “× reps”, “kg”, “s” and “m:ss” are understood.</span>'}</div></div>`;
+  }
+  if (!a.sets || !a.sets.length) return `<div class="m" style="margin-top:6px"><span class="muted">No exercises yet${window.BASELINE_STRAVA ? ' (Strava’s API doesn’t hand them out; paste them from the app)' : ' (sync Strava to fetch them, or paste)'}</span><button class="btn sm ghost" data-action="sets-edit" data-gid="${esc(a.gid)}">Add sets</button></div>`;
+  const ss = strengthSession(a, bodyWeightKg(M, a.date));
+  const ex = ss.exercises.map(x => `<span class="chip" title="${esc(x.sets.map(st => fmtSet(st, x.bw)).join(', '))}">${esc(x.name)} <b>${x.top ? esc(fmtSet(x.top, x.bw)) : x.sets.length + ' sets'}</b>${x.e1 != null ? `<span class="muted"> · e1RM ${Math.round(x.e1)}</span>` : ''}</span>`).join('');
+  return `<div class="m gym-sets" style="margin-top:6px;gap:4px">${ex}<span class="muted">${ss.nSets} sets · ${(ss.tonnage / 1000).toFixed(1)} t${a.setsSrc === 'manual' ? ' · pasted' : ''}</span><button class="btn sm ghost" data-action="sets-edit" data-gid="${esc(a.gid)}" title="Edit the sets">Edit</button></div>`;
 }
 function dial(kind, frac, color, val, unit, title, note, tab) {
   return `<div class="panel dial" data-action="tab" data-tab="${tab}" role="button" tabindex="0" aria-label="${esc(title + ' ' + val)}">${ringSvg(frac, color, val, unit)}<h3>${esc(title)}</h3><div class="note">${note}</div></div>`;
@@ -283,7 +298,7 @@ VIEWS.strain = (v) => {
 VIEWS.activities = (v) => {
   const M = S.model; if (!M || M.empty) { v.innerHTML = emptyStateHtml(); return; }
   const f = S.actFilter;
-  const list = M.acts.filter(a => f === 'all' ? true : f === 'merged' ? a.merged : f === 'strava' ? !a.merged && a.sources.includes('Strava') : !a.sources.includes('Strava'));
+  const list = M.acts.filter(a => f === 'all' ? true : f === 'merged' ? a.merged : f === 'strava' ? !a.merged && a.sources.includes('Strava') : f === 'gym' ? (a.sport === 'strength' || a.sport === 'hiit' || (a.sets && a.sets.length)) : !a.sources.includes('Strava'));
   const shown = list.slice(0, S.actLimit);
   let body = '', lastDate = null;
   for (const a of shown) { if (a.date !== lastDate) { body += `<div class="day-label">${esc(fmtDay(a.date))}</div>`; lastDate = a.date; } body += actRow(a, M); }
@@ -297,7 +312,7 @@ VIEWS.activities = (v) => {
     ${M.splitPairs.length ? `<div class="day-label">Kept separate by you</div>${M.splitPairs.map(p => `<div class="row" style="padding:6px 0;justify-content:space-between"><span>${esc(p.a.name || SPORT_LABEL[p.a.sport])} · ${esc(p.b.name || SPORT_LABEL[p.b.sport])} <span class="muted">(${esc(fmtDay(p.a.start.slice(0, 10)))})</span></span><button class="btn sm" data-action="merge" data-key="${esc(p.key)}">Merge again</button></div>`).join('')}` : ''}
   </div>
   <div class="panel"><div class="panel-h"><h2>All activities</h2>
-    <div class="seg" role="group" aria-label="Filter activities">${[['all', 'All'], ['merged', 'Merged'], ['strava', 'Strava only'], ['watch', 'Apple only']].map(([k, l]) => `<button aria-pressed="${f === k}" data-action="actfilter" data-f="${k}">${l}</button>`).join('')}</div></div>
+    <div class="seg" role="group" aria-label="Filter activities">${[['all', 'All'], ['gym', 'Gym'], ['merged', 'Merged'], ['strava', 'Strava only'], ['watch', 'Apple only']].map(([k, l]) => `<button aria-pressed="${f === k}" data-action="actfilter" data-f="${k}">${l}</button>`).join('')}</div></div>
     ${shown.length ? `<div class="acts">${body}</div>` : '<p class="muted">No activities match this filter.</p>'}
     ${list.length > shown.length ? `<div class="row" style="justify-content:center;margin-top:12px"><button class="btn" data-action="more-acts">Show more (${list.length - shown.length} left)</button></div>` : ''}
   </div>`;
@@ -598,7 +613,7 @@ function syncStatusHtml(s) {
 }
 
 function topbarHtml() {
-  const titles = { today: 'Today', sleep: 'Sleep', journal: 'Journal', data: 'Settings', strain: 'Training', activities: 'Training', plan: 'Training', race: 'Training', trends: 'Trends', recovery: 'Trends', model: 'Trends' };
+  const titles = { today: 'Today', sleep: 'Sleep', journal: 'Journal', data: 'Settings', strain: 'Training', activities: 'Training', plan: 'Training', race: 'Training', gym: 'Training', trends: 'Trends', recovery: 'Trends', model: 'Trends' };
   let right = '';
   const M = S.model;
   if (['today', 'recovery', 'sleep', 'strain'].includes(S.tab) && M && !M.empty) {

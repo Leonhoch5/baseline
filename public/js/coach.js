@@ -114,6 +114,9 @@ function reviewSession(M, s) {
     splits = splitsReview(M, s, a, T, continuous);
     if (splits) { if (splits.note) notes.push(splits.note); if (splits.pace) flags.pace = splits.pace; }
   }
+  // 4a. gym: what was lifted, against the last time (the sets come from Strava's strength logging)
+  let lifted = null;
+  if (a.sets && a.sets.length && typeof gymReview === 'function') { lifted = gymReview(M, a); if (lifted) notes.push(lifted.text); }
   // 4c. long-run jump: more than 10% beyond the longest run of the previous 30 days (Frandsen 2025's injury predictor)
   let jump = null;
   if (s.sportKey === 'run' && a.distM >= 3000 && typeof longestRun30 === 'function') {
@@ -135,7 +138,7 @@ function reviewSession(M, s) {
   const soft = (flags.dur === 'bit-short' || flags.dur === 'bit-long' || flags.dur === 'long' ? 1 : 0) + (flags.eff === 'bit-hard' ? 1 : 0) + (jump != null && jump > 0.25 ? 1 : 0);
   const grade = bad >= 1 ? (bad >= 2 ? 'miss' : 'partial') : soft >= 2 ? 'partial' : 'hit';
   const head = grade === 'hit' ? 'As planned' : grade === 'partial' ? 'Partly as planned' : 'Not as planned';
-  return { grade, head, flags, notes, goal: goalTxt, pace, easy, hard, zones: z, mins, actGid: a.gid, splits, jump };
+  return { grade, head, flags, notes, goal: goalTxt, pace, easy, hard, zones: z, mins, actGid: a.gid, splits, jump, gym: lifted };
 }
 
 // ---- the parts of a session: reps against the prescription, km splits against the zone, HR drift ----
@@ -281,7 +284,7 @@ function coachNotePrompt(M, date) {
     dayVerdict: dr ? dr.verdict : null,
     sessions: dr ? dr.reviews.map(r => ({ planned: r.session ? { title: r.session.title, minutes: r.session.durationMin, intensity: r.session.intensity, target: r.session.target || null, status: r.session.status } : null,
       done: r.review ? { grade: r.review.grade, minutes: Math.round(r.review.mins || 0), notes: r.review.notes.map(n => n.replace(/<[^>]+>/g, '')), goal: r.review.goal ? r.review.goal.replace(/<[^>]+>/g, '') : null, unplanned: !!r.review.unplanned,
-        splits: r.review.splits ? (r.review.splits.kind === 'reps' || r.review.splits.kind === 'strides' ? { reps: r.review.splits.reps.map(x => ({ paceKm: x.p ? fmtMSS(x.p) : null, sec: x.t, m: x.d, hr: x.hr, verdict: x.ok || null })), target: r.review.splits.rangeTxt || null } : r.review.splits.kind === 'km' ? { kmPaces: r.review.splits.km.map(k => fmtMSS(k.t)), zone: r.review.splits.z, hrDriftPct: r.review.splits.drift, secondHalfPct: r.review.splits.half } : { hrDriftPct: r.review.splits.drift }) : null } : null })) : [],
+        splits: r.review.splits ? (r.review.splits.kind === 'reps' || r.review.splits.kind === 'strides' ? { reps: r.review.splits.reps.map(x => ({ paceKm: x.p ? fmtMSS(x.p) : null, sec: x.t, m: x.d, hr: x.hr, verdict: x.ok || null })), target: r.review.splits.rangeTxt || null } : r.review.splits.kind === 'km' ? { kmPaces: r.review.splits.km.map(k => fmtMSS(k.t)), zone: r.review.splits.z, hrDriftPct: r.review.splits.drift, secondHalfPct: r.review.splits.half } : { hrDriftPct: r.review.splits.drift }) : null, gym: r.review.gym ? { exercises: r.review.gym.exercises, tonnageKg: r.review.gym.tonnageKg, stronger: r.review.gym.ups, lighter: r.review.gym.downs } : null } : null })) : [],
     zones: M.zones && M.zones.run ? { runPaceZonesSKm: M.zones.run.paceBounds.map(p => fmtMSS(p)), source: M.zones.run.label } : null,
     week: { planned: wp.by, extra: wp.extra },
     tomorrow: M.plan.sessions.filter(s => s.date === addDays(date, 1) && !s.isRest).map(s => ({ title: s.title, minutes: s.durationMin, intensity: s.intensity, target: s.target || null })),

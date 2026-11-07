@@ -13,7 +13,7 @@ const JOURNAL_ITEMS = [
 ];
 const PLAN_INTENSITY = { rest: 0, recovery: 1, easy: 1, moderate: 2, hard: 3, key: 3, test: 3, race: 4 };
 // the one athlete this app is built for; everything here can be overridden in Settings
-const OWNER = { name: 'Leon', birthYear: 2010, schoolDays: [1, 2, 3, 4, 5] };
+const OWNER = { name: 'Leon', birthYear: 2010, weightKg: 60.8, schoolDays: [1, 2, 3, 4, 5] };
 
 function pairKey(a, b) { return a < b ? a + '~' + b : b + '~' + a; }
 function srcLabel(x) {
@@ -68,7 +68,8 @@ function mergeGroup(items, pairs) {
     durS: primary.durS, movS: pick('movS'), distM: pick('distM'), elevM: pick('elevM'), kcal: watch && watch.kcal ? watch.kcal : pick('kcal'),
     avgHr: hrSrc ? hrSrc.avgHr : null, maxHr: hrSrc ? hrSrc.maxHr : null, hb: hrSrc && hrSrc.hb ? hrSrc.hb : null,
     hrFrom: hrSrc ? srcLabel(hrSrc) : null, hasWatchHr: !!watch, re: strava[0] ? strava[0].re : null,
-    sources, stravaId: strava[0] ? strava[0].sid : null, an: strava[0] && strava[0].an ? strava[0].an : null
+    sources, stravaId: strava[0] ? strava[0].sid : null, an: strava[0] && strava[0].an ? strava[0].an : null,
+    sets: (() => { const w = items.find(x => x.sets && x.sets.length); return w ? w.sets : null; })(), mg: (() => { const w = items.find(x => x.sets && x.sets.length); return w ? (w.mg || {}) : null; })(), setsSrc: (() => { const w = items.find(x => x.sets && x.sets.length); return w ? (w.setsSrc || 'strava') : null; })()
   };
 }
 

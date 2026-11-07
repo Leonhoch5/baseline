@@ -512,3 +512,18 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 
 /* ---- race pacing card ---- */
 .pace-t td.num { font-variant-numeric: tabular-nums; text-align: right; }
+
+/* ---- gym ---- */
+.gym-sets .chip b { font-weight: 700; margin-left: 2px; }
+.gym-sets .chip { white-space: normal; line-height: 1.3; padding: 3px 9px; }
+.sets-edit textarea { width: 100%; box-sizing: border-box; font: 13px/1.4 var(--font-body); padding: 8px 10px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--panel-2); color: var(--fg); resize: vertical; }
+.gym-t tbody tr[data-action] { cursor: pointer; }
+.gym-t tbody tr.is-sel td { background: var(--accent-soft); }
+.gym-t td.num, .t td.num, .t th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.mg-list { display: flex; flex-direction: column; gap: 8px; }
+.mg-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 13px; }
+.mg-row small { font-weight: 400; }
+.mg-row .bar { height: 8px; border-radius: 4px; background: var(--fill); overflow: hidden; }
+.mg-row .bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.mg-row b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gym-ex { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }

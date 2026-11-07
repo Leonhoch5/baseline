@@ -1,17 +1,17 @@
 // ---------- app state, storage, actions ----------
 function emptyData() { return { apple: {}, strava: {}, journal: {}, planMeta: null, planSessions: [], planWeeks: [], plans: [], planChecks: {}, planEdits: {}, preds: {}, coach: {}, profile: {}, tests: { list: [] }, overlaps: { split: {} }, metaApple: null, metaStrava: null, metaDrive: null }; }
 // five main sections; the leaf views inside them keep their own ids (used in links and the URL)
-const GROUPS = { today: ['today'], sleep: ['sleep'], training: ['strain', 'activities', 'plan', 'race'], trends: ['trends', 'recovery', 'model'], journal: ['journal'] };
+const GROUPS = { today: ['today'], sleep: ['sleep'], training: ['strain', 'activities', 'gym', 'plan', 'race'], trends: ['trends', 'recovery', 'model'], journal: ['journal'] };
 const NAV = ['today', 'sleep', 'training', 'trends', 'journal'];
 const NAV_LABEL = { today: 'Today', sleep: 'Sleep', training: 'Training', trends: 'Trends', journal: 'Journal', data: 'Settings' };
-const SUB_LABEL = { strain: 'Load', activities: 'Activities', plan: 'Plan', race: 'Race', trends: 'Trends', recovery: 'Recovery', model: 'How it works' };
+const SUB_LABEL = { strain: 'Load', activities: 'Activities', gym: 'Gym', plan: 'Plan', race: 'Race', trends: 'Trends', recovery: 'Recovery', model: 'How it works' };
 const TABS = [...Object.values(GROUPS).flat(), 'data'];
 function groupOf(t) { for (const g in GROUPS) if (GROUPS[g].includes(t)) return g; return t; }
 const COLLS = ['apple', 'strava', 'journal', 'planSessions', 'planWeeks', 'plans', 'plan', 'settings', 'meta', 'preds', 'coach'];
 const S = {
   tab: 'today', date: todayYmd(), jdate: addDays(todayYmd(), -1), range: 90, actFilter: 'all', actLimit: 30, ovlLimit: 8, planAll: false,
   sample: false, sampleData: null, real: emptyData(), model: null, db: null, dbMode: 'loading', loaded: {},
-  importing: null, stravaSync: null, driveSync: null, impMonths: 12, jdraft: {}, confirmDelete: false, owner: null, guideOpen: false, planSel: null, planImport: null, planDel: null, testForm: null, planEdit: null, coachBusy: null, coachErr: null, backup: null, stravaStatus: null, stravaNotice: null, serverInfo: null
+  importing: null, stravaSync: null, driveSync: null, impMonths: 12, jdraft: {}, confirmDelete: false, owner: null, guideOpen: false, planSel: null, planImport: null, planDel: null, testForm: null, planEdit: null, coachBusy: null, coachErr: null, backup: null, stravaStatus: null, stravaNotice: null, serverInfo: null, setsEdit: null, gymEx: null
 };
 function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } }
@@ -261,6 +261,21 @@ async function stravaSync(opts) {
         }
       } catch (e) { if (e && MCP_STOP.includes(e.code)) throw e; }
     }
+    // gym sets: the exercises, weights and reps logged in Strava (the connector returns them; the public API does not).
+    // Sets are often typed in after the workout, so the last week is re-read on every sync.
+    for (const a of got) { const o = existing[a.id]; if (!o) continue; if (o.sets && o.sets.length) { a.sets = o.sets; a.mg = o.mg || {}; a.setsSrc = o.setsSrc || 'strava'; } if (o.setsDone) a.setsDone = true; }
+    for (const a of got) if (!a.sets && a.desc && !a.setsDone) { const p = parseSetsText(a.desc); if (p) { a.sets = p.sets; a.mg = p.mg; a.setsSrc = 'description'; } }
+    const weekAgo = addDays(todayYmd(), -7), yearAgo = addDays(todayYmd(), -400);
+    const needSets = got.filter(a => (a.sport === 'strength' || a.sport === 'hiit' || /workout/i.test(a.type || '')) && !(a.sets && a.setsSrc === 'manual') && (!a.sets || !a.sets.length) && (!a.setsDone || a.start.slice(0, 10) >= weekAgo) && a.start.slice(0, 10) >= yearAgo).sort((x, y) => y.ls - x.ls).slice(0, opts.quiet ? 10 : 80);
+    for (let i = 0; i < needSets.length; i += 10) {
+      const chunk = needSets.slice(i, i + 10);
+      S.stravaSync.msg = `Reading gym sets for ${Math.min(i + 10, needSets.length)} of ${needSets.length} strength sessions…`; refreshSync();
+      try {
+        const r = await callStrava(mcp, 'get_strength_workout_details', { activity_ids: chunk.map(a => a.sid) });
+        const byId = {}; for (const w of Array.isArray(r) ? r : (r && Array.isArray(r.workouts) ? r.workouts : [])) byId[String(w.activity_id)] = w;
+        for (const a of chunk) { const w = byId[a.sid]; a.setsDone = true; const p = (w ? setsFromConnector(w.exercise_sets) : null) || (a.desc ? parseSetsText(a.desc) : null); if (p) { a.sets = p.sets; a.mg = p.mg; a.setsSrc = w && w.exercise_sets && w.exercise_sets.length ? 'strava' : 'description'; } }
+      } catch (e) { if (e && MCP_STOP.includes(e.code)) throw e; }
+    }
     try {
       const z = await callStrava(mcp, 'get_athlete_zones', {}), hm = hrMaxFromStravaZones(z);
       const zs = z && Array.isArray(z.heart_rate_zones) && z.heart_rate_zones.length >= 5 ? z.heart_rate_zones.slice(0, 4).map(x => x && x.max).filter(x => x > 0) : null;
@@ -483,6 +498,30 @@ const ACTIONS = {
   'ck-set': b => saveJournalPatch(b.dataset.date, j => { const k = b.dataset.key, v = +b.dataset.val; if (j[k] === v) delete j[k]; else j[k] = v; }),
   'rpe-set': b => saveJournalPatch(b.dataset.date, j => { const g = b.dataset.gid, v = +b.dataset.val; j.rpe = { ...(j.rpe || {}) }; if (j.rpe[g] === v) delete j.rpe[g]; else j.rpe[g] = v; }),
   jdiscard: () => { delete S.jdraft[S.jdate]; render(); },
+  // gym sets typed or pasted for a strength activity (saved on its Strava record; the Apple record when there is no Strava one)
+  'sets-edit': b => { S.setsEdit = { gid: b.dataset.gid, text: null, err: null }; render(); },
+  'sets-cancel': () => { S.setsEdit = null; render(); },
+  'sets-save': async b => {
+    const gid = b.dataset.gid, ta = document.getElementById('setsText'); const text = ta ? ta.value : '';
+    const parsed = parseSetsText(text);
+    if (!parsed && text.trim()) { S.setsEdit = { gid, text, err: 'Could not read any sets: use “Exercise 50 kg × 8” lines.' }; render(); return; }
+    const a = S.model && S.model.acts.find(x => x.gid === gid); if (!a) return;
+    const data = cur();
+    const sItem = a.items.find(x => x.srcKind === 'strava');
+    try {
+      if (sItem) {
+        const m = sItem.start.slice(0, 7), doc = data.strava[m]; if (!doc) throw new Error('month not loaded');
+        const acts = doc.acts.map(x => x.id !== sItem.id ? x : clean({ ...x, sets: parsed ? parsed.sets : null, mg: parsed ? { ...(x.mg || {}), ...parsed.mg } : null, setsSrc: parsed ? 'manual' : null, setsDone: true }));
+        if (S.sample) data.strava[m] = { ...doc, acts }; else await writeDoc('strava/' + m, { ...doc, acts, updatedAt: new Date().toISOString() });
+      } else {
+        const w = a.items.find(x => x.srcKind === 'apple'); const m = w.start.slice(0, 7), doc = data.apple[m]; if (!doc) throw new Error('month not loaded');
+        const workouts = doc.workouts.map(x => x.id !== w.id ? x : clean({ ...x, sets: parsed ? parsed.sets : null, mg: parsed ? parsed.mg : null, setsSrc: parsed ? 'manual' : null }));
+        if (S.sample) data.apple[m] = { ...doc, workouts }; else await writeDoc('apple/' + m, { ...doc, workouts });
+      }
+      S.setsEdit = null; changed();
+    } catch (e) { S.setsEdit = { gid, text, err: humanError(e) }; render(); }
+  },
+  'gym-ex': b => { S.gymEx = b.dataset.ex === S.gymEx ? null : b.dataset.ex; render(); },
   jdate: b => { S.jdate = b.dataset.date; render(); },
   jday: b => { const n = addDays(S.jdate, +b.dataset.d); if (n <= todayYmd()) { S.jdate = n; render(); } },
   'strava-sync': () => stravaSync({}),

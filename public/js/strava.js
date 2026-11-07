@@ -89,6 +89,8 @@ async function parseStravaFile(file) {
 }
 
 // Connector (Strava list_activities) → internal activity
+// the description of a gym session is kept when it looks like a set list (Bevel and other apps write the sets there)
+function gymDesc(type, desc) { const sp = sportOf(type); if (!(sp === 'strength' || sp === 'hiit' || /workout/i.test(type || '')) || !desc) return null; const t = String(desc).slice(0, 4000); return typeof descriptionHasSets === 'function' && descriptionHasSets(t) ? t : null; }
 function normStravaApi(a) {
   const sm = a.summary || {};
   const start = String(a.start_local || '').slice(0, 19);
@@ -99,7 +101,8 @@ function normStravaApi(a) {
     id: 's' + a.id, sid: String(a.id), name: String(a.name || '').slice(0, 120), sport: sportOf(type), type, start,
     ls: lmsOf(start), le: lmsOf(start) + durS * 1000, durS, movS: sm.moving_time ? Math.round(sm.moving_time) : null,
     distM: sm.distance ? Math.round(sm.distance) : null, elevM: sm.elevation_gain ? Math.round(sm.elevation_gain) : null,
-    kcal: sm.total_calories ? Math.round(sm.total_calories) : null, re: sm.relative_effort != null ? Math.round(sm.relative_effort) : null, via: 'api'
+    kcal: sm.total_calories ? Math.round(sm.total_calories) : null, re: sm.relative_effort != null ? Math.round(sm.relative_effort) : null, via: 'api',
+    desc: gymDesc(type, a.description)
   });
 }
 // Strava's own REST API (SummaryActivity / DetailedActivity, used by the standalone server) → internal activity
@@ -114,7 +117,7 @@ function normStravaRaw(a) {
     distM: a.distance ? Math.round(a.distance) : null, elevM: a.total_elevation_gain ? Math.round(a.total_elevation_gain) : null,
     kcal: a.calories ? Math.round(a.calories) : null, re: a.suffer_score != null ? Math.round(a.suffer_score) : null,
     avgHr: a.has_heartrate && a.average_heartrate ? Math.round(a.average_heartrate) : null, maxHr: a.has_heartrate && a.max_heartrate ? Math.round(a.max_heartrate) : null,
-    hasHr: a.has_heartrate ? true : null, via: 'api'
+    hasHr: a.has_heartrate ? true : null, via: 'api', desc: gymDesc(type, a.description)
   });
 }
 // Heart-rate stream (time[], heart_rate[]) → avg / max / time-in-HR histogram
