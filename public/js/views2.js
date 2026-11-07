@@ -63,6 +63,54 @@ function mixPanelHtml(M, date) {
     ${insightList([{ tone: mix.tone, t: mix.t }])}
     <p class="muted" style="font-size:12px;margin:8px 0 0">Target for endurance training: about 80% easy, 20% hard, little in between.</p></div>`;
 }
+function weekShapeHtml(M, date) {
+  const w = typeof weekShape === 'function' ? weekShape(M, date) : null;
+  if (!w) return `<div class="panel"><div class="panel-h"><h2>Week shape</h2><span class="aside">last 7 days</span></div><p class="muted" style="margin:0">Needs a week of load.</p></div>`;
+  const mono = w.monotony >= 2 ? 'lo' : w.monotony >= 1.5 ? 'mid' : 'hi';
+  return `<div class="panel"><div class="panel-h"><h2>Week shape</h2><span class="aside">last 7 days · Foster</span></div>
+    <div class="tiles swim-tiles" style="margin-bottom:10px">
+      ${tile('Monotony', w.monotony.toFixed(1), '', 'mean ÷ SD of daily load · above 2 is risky', mono === 'lo' ? 'delta-bad' : '')}
+      ${tile('Strain', String(Math.round(w.strain)), '', w.medStrain != null ? `usual week ${Math.round(w.medStrain)}` : 'weekly load × monotony', w.medStrain != null && w.strain > w.medStrain * 1.5 ? 'delta-bad' : '')}
+      ${tile('Easy load tomorrow', w.easy != null ? String(Math.round(w.easy)) : null, '', w.easyStrain != null ? `≈ strain ${f1(w.easyStrain)} keeps form at zero` : '', '')}
+    </div>
+    ${insightList([{ tone: w.tone, t: w.text }])}
+    <p class="muted" style="font-size:12px;margin:8px 0 0">Foster 1998: illness and overtraining in athletes followed spikes in weekly strain and monotonous weeks (the same load every day), not high load by itself. One clearly light day a week keeps monotony low.</p></div>`;
+}
+function efficiencyPanelHtml(M, date) {
+  const e = typeof efficiencyTrend === 'function' ? efficiencyTrend(M, date) : null;
+  if (!e) return `<div class="panel"><div class="panel-h"><h2>Aerobic efficiency</h2><span class="aside">steady runs</span></div><p class="muted" style="margin:0">Needs at least 3 steady runs with heart rate (≥ 3 km, ≥ 25 min, few hard minutes) in the last 4 months.</p></div>`;
+  const chg = e.change != null ? `${e.change >= 0 ? '+' : '−'}${Math.abs(e.change * 100).toFixed(1)}% vs the 4 weeks before` : 'no earlier block to compare';
+  const dcls = e.driftMed == null ? '' : e.driftMed <= 5 ? 'delta-good' : e.driftMed > 10 ? 'delta-bad' : '';
+  return `<div class="panel"><div class="panel-h"><h2>Aerobic efficiency</h2><span class="aside">${e.rows.length} steady runs · last 4 months</span></div>
+    <div class="tiles swim-tiles" style="margin-bottom:10px">
+      ${tile('Metres per beat', e.efNow != null ? e.efNow.toFixed(2) : null, 'm/beat', e.efNow != null ? `last 4 weeks · ${chg}` : 'no steady run in the last 4 weeks', e.change == null ? '' : e.change >= 0.02 ? 'delta-good' : e.change <= -0.02 ? 'delta-bad' : '')}
+      ${tile('HR drift, long runs', e.driftMed != null ? e.driftMed.toFixed(1) : null, '%', e.driftMed != null ? `median of ${e.driftN} runs ≥ 45 min · ${e.driftWord}` : 'needs analysed runs ≥ 45 min', dcls)}
+    </div>
+    <div class="legend"><span><i style="background:var(--rec-hi)"></i>Steady run</span><span><i style="background:var(--fg-2)"></i>28-day average</span></div>
+    <div class="chart" id="c-ef"></div>
+    <p class="muted" style="font-size:12px;margin:8px 0 0">Efficiency factor = speed ÷ average heart rate on steady runs (TrainingPeaks); it rises as aerobic fitness builds, and falls with heat, fatigue or illness. Drift bands (Friel): ≤ 5 % sound endurance, 5–10 % moderate limitation or fatigue, > 10 % above the aerobic threshold or too long for now.</p></div>`;
+}
+function drawEfficiency(v, M, date) {
+  const el = v.querySelector('#c-ef'); if (!el) return;
+  const e = efficiencyTrend(M, date); if (!e) return;
+  const n = 120, dates = []; for (let i = n - 1; i >= 0; i--) dates.push(addDays(date, -i));
+  const by = {}; for (const r of e.rows) by[r.date] = r;
+  const roll = dates.map(d => { const w = e.rows.filter(r => r.date <= d && daysBetween(r.date, d) < 28); return w.length >= 2 ? mean(w.map(r => r.ef)) : null; });
+  lineChart(el, { label: 'Efficiency factor per steady run', height: 160, labels: dates.map(fmtDayShort), tipHead: i => by[dates[i]] ? `${fmtDay(dates[i])} · ${by[dates[i]].name}` : fmtDay(dates[i]), fmtTip: x => x.toFixed(2) + ' m/beat',
+    series: [{ name: 'run', values: dates.map(d => by[d] ? by[d].ef : null), color: 'var(--rec-hi)', dots: true }, { name: '28-day', values: roll, color: 'var(--fg-2)', dash: '4 4' }] });
+}
+function bodyPanelHtml(M, date) {
+  const b = typeof bodyLog === 'function' ? bodyLog(M, date) : null;
+  if (!b) return `<div class="panel"><div class="panel-h"><h2>Body</h2><span class="aside">height · weight</span></div><p class="muted" style="margin:0">Log height and weight now and then in the Journal (a line under the day’s questions). Growth rate is the one youth-specific injury guard-rail there is; weight is only for the bike power estimate later, never a target.</p></div>`;
+  const rateTxt = b.rate != null ? `${b.rate >= 0 ? '+' : '−'}${Math.abs(b.rate).toFixed(1)} cm/yr since ${fmtDayShort(b.ref.date)}` : b.hs.length ? 'needs a second height ≥ 2 months later' : '';
+  return `<div class="panel"><div class="panel-h"><h2>Body</h2><span class="aside">${b.stale ? 'log a new height' : 'from the journal'}</span></div>
+    <div class="tiles swim-tiles" style="margin-bottom:${b.spurt ? 10 : 0}px">
+      ${tile('Height', b.hLast ? String(b.hLast.v) : null, 'cm', b.hLast ? `${fmtDayShort(b.hLast.date)} · ${rateTxt}` : 'not logged', b.spurt ? 'delta-bad' : '')}
+      ${tile('Weight', b.wLast ? String(b.wLast.v) : null, 'kg', b.wLast ? `${fmtDayShort(b.wLast.date)}${b.wChange != null ? ` · ${b.wChange >= 0 ? '+' : '−'}${Math.abs(b.wChange).toFixed(1)} kg vs ${fmtDayShort(b.wRef.date)}` : ''}` : 'not logged', '')}
+    </div>
+    ${b.spurt ? insightList([{ tone: 'warn', t: `Growth spurt. Faster-than-peers stature growth went with ×1.5 bone injuries and ×2 growth-plate injuries in adolescent athletes: hold run volume, no long-run jumps, no new jumping work, and watch heels and knees (Sever’s, Osgood-Schlatter).` }]) : ''}
+  </div>`;
+}
 function sleepCoachHtml(M, date) {
   const sc = sleepCoach(M, date, 7);
   if (!sc) return '';

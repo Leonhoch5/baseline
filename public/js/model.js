@@ -12,6 +12,8 @@ const JOURNAL_ITEMS = [
   { key: 'travel', label: 'Travel', q: 'Travelled' },
 ];
 const PLAN_INTENSITY = { rest: 0, recovery: 1, easy: 1, moderate: 2, hard: 3, key: 3, test: 3, race: 4 };
+// the one athlete this app is built for; everything here can be overridden in Settings
+const OWNER = { name: 'Leon', birthYear: 2010, schoolDays: [1, 2, 3, 4, 5] };
 
 function pairKey(a, b) { return a < b ? a + '~' + b : b + '~' + a; }
 function srcLabel(x) {
@@ -144,7 +146,9 @@ function strainTarget(rec) { const z = recoveryZone(rec); return z === 'hi' ? [1
 function buildModel(D) {
   const prof = D.profile || {};
   const metaA = D.metaApple || {};
-  const age = prof.birthYear ? new Date().getFullYear() - prof.birthYear : metaA.dob ? new Date().getFullYear() - +metaA.dob.slice(0, 4) : null;
+  // this is Leon's app: when nothing says otherwise, the athlete was born in 2010 (change it in Settings)
+  const birthYear = prof.birthYear || (metaA.dob ? +metaA.dob.slice(0, 4) : null) || OWNER.birthYear;
+  const age = new Date().getFullYear() - birthYear;
   let hrMax = 190, hrMaxSrc = 'default';
   if (prof.hrMax) { hrMax = prof.hrMax; hrMaxSrc = 'you'; }
   else if (prof.stravaHrMax) { hrMax = prof.stravaHrMax; hrMaxSrc = 'Strava zones'; }
@@ -275,7 +279,7 @@ function buildModel(D) {
     const L = (n) => { let s = 0; for (let k = Math.max(0, i - n + 1); k <= i; k++) s += out[dates[k]].load || 0; return s / n; };
     d.acute = L(7); d.chronic = i >= 13 ? L(28) : null; d.acwr = d.chronic ? d.acute / d.chronic : null;
   }
-  const model = { prof: { hrMax, hrMaxSrc, needBase, age, zones: zb, zoneSrc: zb ? 'Strava' : '% of max HR' }, acts: ov.acts, pairs: ov.pairs, splitPairs: ov.splitPairs, journal, dates, day: out, first, last, today };
+  const model = { prof: { hrMax, hrMaxSrc, needBase, age, birthYear, birthYearSrc: prof.birthYear ? 'you' : metaA.dob ? 'Apple Health' : 'assumed', zones: zb, zoneSrc: zb ? 'Strava' : '% of max HR' }, acts: ov.acts, pairs: ov.pairs, splitPairs: ov.splitPairs, journal, dates, day: out, first, last, today };
   model.plan = buildPlan(D, actsByDay, today);
   model.insights = journalInsights(journal, out);
   return model;

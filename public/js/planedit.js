@@ -85,6 +85,13 @@ const PLAN_EDIT_ACTIONS = {
     for (const s of M.plan.sessions) if (s.date === date && s.swap) { const e = E.sessions[s.id]; if (!e) continue; if (e.swap && e.swap.prev) E.sessions[s.id] = e.swap.prev; else delete E.sessions[s.id]; }
     await savePlanEdits(E);
   },
+  // after a missed week: replace the coming days with the easier version of the plan (Runna's "rebuild from here")
+  'realign-easier': b => {
+    const weeks = +b.dataset.weeks || 1, start = M_today();
+    S.planEdit = { mode: 'replace', pre: { template: 'easier', start, end: addDays(start, weeks * 7 - 1), label: weeks > 1 ? 'Back on track' : 'Catch-up week, easier' } };
+    setTab('plan'); setTimeout(() => { const el = document.getElementById('peForm'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 60);
+  },
+  'realign-dismiss': b => { lsSet('baseline.realign', b.dataset.week || ''); render(); },
   'ease-back': b => {
     const rs = S.model && S.model.plan.recentSick; if (!rs) return;
     const start = addDays(rs.end, 1) < M_today() ? M_today() : addDays(rs.end, 1);
@@ -196,6 +203,15 @@ function planChangesHtml(M) {
   return `<div class="panel"><div class="panel-h"><h2>Your changes</h2><span class="aside">the imported plan stays as it was</span></div><div class="pe-rows">${rows}</div></div>`;
 }
 
+// Today and Plan: after a missed week, the realignment notice (levels: few / week / month)
+function realignHtml(M) {
+  const r = typeof realignment === 'function' ? realignment(M, M.today) : null; if (!r || r.level === 'few') return '';
+  const wk = mondayOf(M.today); if (lsGet('baseline.realign') === wk) return '';
+  const already = (M.plan.blocks || []).some(b => b.kind === 'replace' && b.start <= M.today && (b.end || b.start) >= M.today);
+  if (already) return '';   // a replaced period already covers today: the plan has been rebuilt
+  return `<div class="notice ${r.level === 'month' ? 'warn' : ''}" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1 1 260px"><b>${r.level === 'month' ? 'Most of the last 4 weeks missed.' : 'Last week was mostly missed.'}</b> ${esc(r.text)}</span>
+    <span class="row" style="gap:6px"><button class="btn sm primary" data-action="realign-easier" data-weeks="${r.weeks}">Easier ${r.weeks > 1 ? r.weeks + ' weeks' : 'week'} from today</button><button class="btn sm ghost" data-action="realign-dismiss" data-week="${wk}">Not now</button></span></div>`;
+}
 // Today: while sick, and the first days after
 function sickTodayHtml(M) {
   const P = M.plan; if (!P) return '';

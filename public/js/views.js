@@ -93,7 +93,7 @@ VIEWS.today = (v) => {
   if (!d || (!d.a && !d.acts.length)) {
     const c = coachFor(d || { date: S.date }, M);
     if (!c.planned.length && !c.rest) { v.innerHTML = noDayData(M); return; }
-    v.innerHTML = sickTodayHtml(M) + (S.planEdit && S.planEdit.mode === 'sick' ? planEditFormHtml(M) : '') + `<div class="panel coach"><div><div class="eyebrow">${S.date === M.today ? "Today's plan" : 'Plan for ' + esc(fmtDay(S.date))}</div><h2>${esc(c.head)}</h2><p>${esc(c.body)}</p>${dayStatusHtml(M, S.date)}${plannedListHtml(c, M)}${S.date === M.today && !c.sick && !S.planEdit ? '<button class="btn sm ghost" style="margin-top:10px" data-action="pe-open" data-mode="sick">Feeling sick or injured?</button>' : ''}</div>
+    v.innerHTML = sickTodayHtml(M) + (S.date === M.today ? realignHtml(M) : '') + (S.planEdit && S.planEdit.mode === 'sick' ? planEditFormHtml(M) : '') + `<div class="panel coach"><div><div class="eyebrow">${S.date === M.today ? "Today's plan" : 'Plan for ' + esc(fmtDay(S.date))}</div><h2>${esc(c.head)}</h2><p>${esc(c.body)}</p>${dayStatusHtml(M, S.date)}${plannedListHtml(c, M)}${S.date === M.today && !c.sick && !S.planEdit ? '<button class="btn sm ghost" style="margin-top:10px" data-action="pe-open" data-mode="sick">Feeling sick or injured?</button>' : ''}</div>
       <div><div class="eyebrow">Strain target</div><p class="muted" style="font-size:13px;margin:8px 0 0">${c.target[0]}–${c.target[1]} on the 0–21 scale. It narrows once your recovery score is available.</p></div></div>
       <div class="panel"><div class="panel-h"><h2>No Watch data for this day yet</h2></div><p class="sub" style="margin:0 0 12px">Heart rate, sleep and HRV arrive when the iPhone Shortcut syncs; workouts arrive from Strava.</p>
       <div class="row"><button class="btn" data-action="drive-sync">Check iPhone data now</button><button class="btn ghost" data-action="tab" data-tab="data">Sync settings</button></div><div id="driveStatus" style="margin-top:10px">${driveStatusHtml(S.driveSync)}</div></div>` + coachPanelHtmlV2(M, S.date) + testDueNoticeHtml(M) + coachPanelHtml(M, S.date);
@@ -116,6 +116,7 @@ VIEWS.today = (v) => {
     ${dial('sleep', d.sleepScore != null ? d.sleepScore / 100 : 0, 'var(--sleep)', d.sleepScore != null ? d.sleepScore + '%' : '—', ssW ? ssW.toUpperCase() : 'NO DATA', 'Sleep', esc(sleepNote), 'sleep')}
   </div>
   ${sickTodayHtml(M)}
+  ${S.date === M.today ? realignHtml(M) : ''}
   ${S.planEdit && S.planEdit.mode === 'sick' ? planEditFormHtml(M) : ''}
   <div class="panel coach">
     <div><div class="eyebrow">${S.date === M.today ? "Today's guidance" : 'Guidance for ' + esc(fmtDay(S.date))}</div><h2>${esc(coach.head)}</h2><p>${esc(coach.body)}</p>${dayStatusHtml(M, S.date)}${sessionHtml}${S.date === M.today && !coach.sick && !S.planEdit ? '<button class="btn sm ghost" style="margin-top:10px" data-action="pe-open" data-mode="sick">Feeling sick or injured?</button>' : ''}</div>
@@ -234,8 +235,8 @@ VIEWS.strain = (v) => {
   const M = S.model; if (!M || M.empty) { v.innerHTML = emptyStateHtml(); return; }
   const d = M.day[S.date];
   if (!d || (!d.a && !d.acts.length)) {
-    v.innerHTML = statusPanelHtml(trainingStatus(M, S.date), true) + fitnessPanelHtml() + mixPanelHtml(M, S.date) + noDayData(M);
-    drawFitness(v, M, S.date); return;
+    v.innerHTML = statusPanelHtml(trainingStatus(M, S.date), true) + fitnessPanelHtml() + `<div class="cols">${mixPanelHtml(M, S.date)}${weekShapeHtml(M, S.date)}</div>` + efficiencyPanelHtml(M, S.date) + noDayData(M);
+    drawFitness(v, M, S.date); drawEfficiency(v, M, S.date); return;
   }
   const coach = coachFor(d, M);
   const zn = d.zones, ztot = zn.reduce((a, b) => a + b, 0);
@@ -263,6 +264,10 @@ VIEWS.strain = (v) => {
     <div class="panel"><div class="panel-h"><h2>Last 14 days</h2><span class="aside">tap a day to open it</span></div><div class="chart" id="c-14"></div></div>
     ${mixPanelHtml(M, S.date)}
   </div>
+  <div class="cols">
+    ${weekShapeHtml(M, S.date)}
+    ${efficiencyPanelHtml(M, S.date)}
+  </div>
   ${fitnessPanelHtml()}`;
   const hd = hrDayData(d, M);
   if (hd.hr.some(x => x != null)) dayChart(v.querySelector('#c-day'), hd); else v.querySelector('#c-day').innerHTML = '<p class="muted">No heart-rate readings for this day.</p>';
@@ -272,6 +277,7 @@ VIEWS.strain = (v) => {
     onClick: it => { S.date = it.date; render(); }
   });
   drawFitness(v, M, S.date);
+  drawEfficiency(v, M, S.date);
 };
 
 VIEWS.activities = (v) => {
@@ -340,7 +346,7 @@ VIEWS.trends = (v) => {
     <div class="panel"><div class="panel-h"><h2>Strain</h2></div><div class="chart" id="c-str"></div></div>
     <div class="panel"><div class="panel-h"><h2>Sleep</h2></div><div class="legend"><span><i class="box" style="background:var(--sleep)"></i>Asleep</span><span><i style="background:var(--fg-2)"></i>Sleep need</span></div><div class="chart" id="c-slp"></div></div>
   </div>
-  ${days.some(x => x.a && x.a.vo2) ? `<div class="panel"><div class="panel-h"><h2>VO2 max</h2><span class="aside">mL/kg/min, Apple Watch estimate</span></div><div class="chart" id="c-vo2"></div></div>` : ''}
+  <div class="cols">${bodyPanelHtml(M, end)}${days.some(x => x.a && x.a.vo2) ? `<div class="panel"><div class="panel-h"><h2>VO2 max</h2><span class="aside">mL/kg/min, Apple Watch estimate</span></div><div class="chart" id="c-vo2"></div></div>` : ''}</div>
   <div class="panel"><div class="panel-h"><h2>Weekly summary</h2></div><div class="table-wrap">${weeklyTable(M, end, n)}</div></div>`;
   const go = it => { S.date = it.date; S.tab = 'today'; render(); };
   barChart(v.querySelector('#c-rec'), { label: 'Recovery by day', yMax: 100, ticks: [0, 33, 66, 100], fmt: t => t + '%', height: 180, onClick: go,
@@ -391,6 +397,7 @@ VIEWS.journal = (v) => {
     <div class="ck"><label>General fatigue</label>${scale('fatigue', 5, 1, 5, ck, ce.fatigue)}</div>
     <div class="ck"><label>Muscle soreness</label>${scale('soreness', 5, 1, 5, ck, ce.soreness)}</div>
     <div class="ck"><label>How well did you sleep?</label>${scale('sleepQ', 5, 1, 5, ck, ce.sleepQ)}</div>
+    ${checkinTrendHtml(M, ck)}
   </div>
   <div class="panel"><div class="panel-h"><h2>Session effort</h2><span class="aside">${esc(fmtDay(date))} · RPE 0–10, about 30 min after the session</span></div>
     ${dayActs.length ? dayActs.map(a => { const r = e.rpe ? e.rpe[a.gid] : (saved.rpe || {})[a.gid]; return `<div class="ck"><label>${esc(a.name)} <span class="muted" style="font-weight:400">· ${fmtDurLong(a.durS / 60)}</span></label><div class="seg scale-seg" role="group">${Array.from({ length: 11 }, (_, k) => k).map(x => `<button aria-pressed="${r === x}" data-action="rpe-set" data-date="${date}" data-gid="${esc(a.gid)}" data-val="${x}">${x}</button>`).join('')}</div><div class="scale-ends"><span>rest</span><span>maximal</span></div></div>`; }).join('') + '<p class="muted" style="font-size:12px;margin:8px 0 0">Effort × minutes gives session-RPE load (Foster et al. 2001), which works across swimming, strength and other sessions where heart rate is unreliable.</p>' : '<p class="muted" style="margin:0">No workouts on this day.</p>'}
@@ -401,6 +408,7 @@ VIEWS.journal = (v) => {
       <p class="sub" style="margin:0 0 6px">What happened on this day? Answers are compared with your recovery the next morning.</p>
       ${JOURNAL_ITEMS.map(it => `<div class="jq"><label>${esc(it.q)}</label>${tri(it.key)}</div>`).join('')}
       <div class="jq"><label>Stress level</label><div class="seg" role="group" aria-label="Stress level">${[1, 2, 3, 4, 5].map(n => `<button aria-pressed="${e.stress === n}" data-action="jset" data-key="stress" data-val="${n}">${n}</button>`).join('')}</div></div>
+      <div class="jq"><label>Height · weight <span class="muted" style="font-weight:400">(now and then; growth matters at your age)</span></label><div class="row" style="gap:6px"><input type="text" inputmode="decimal" data-jnum="height" placeholder="cm" style="width:74px" value="${e.height != null ? esc(String(e.height)) : ''}"><input type="text" inputmode="decimal" data-jnum="weight" placeholder="kg" style="width:74px" value="${e.weight != null ? esc(String(e.weight)) : ''}"></div></div>
       <div style="padding-top:10px"><label class="eyebrow" for="jnote">Note</label><textarea id="jnote" data-action-input="jnote" placeholder="Anything else worth remembering: how the legs felt, a late night, a niggle…">${esc(e.note || '')}</textarea></div>
       <div class="row" style="margin-top:12px"><button class="btn primary" data-action="jsave" ${dirty ? '' : 'disabled'}>Save entry</button>${dirty ? '<button class="btn ghost" data-action="jdiscard">Discard changes</button>' : ''}<span class="muted" id="jstatus" style="font-size:12px"></span></div>
     </div>
@@ -459,6 +467,7 @@ VIEWS.plan = (v) => {
   const delHtml = sel.id === 'main' ? '' : S.planDel === sel.id ? `<div class="row" style="margin-top:12px"><span>Delete this plan and all its sessions?</span><button class="btn danger sm" data-action="plan-del-yes" data-id="${esc(sel.id)}">Delete plan</button><button class="btn ghost sm" data-action="plan-del-no">Cancel</button><span class="muted" id="planDelStatus" style="font-size:12px"></span></div>` : `<button class="btn ghost sm" style="margin-top:10px" data-action="plan-del-ask" data-id="${esc(sel.id)}">Delete plan</button>`;
   v.innerHTML = `
   ${planChips}
+  ${realignHtml(M)}
   ${S.planImport ? planImportHtml() : ''}
   <div class="cols">
     <div class="panel"><div class="eyebrow">Training plan${sel.status === 'next' ? ' · starts ' + esc(fmtDay(sel.start)) : sel.status === 'past' ? ' · finished' : ''}</div><h2 style="font:700 22px/1.2 var(--font-body);letter-spacing:-.02em;margin:4px 0 6px">${esc(meta.name || 'Your plan')}</h2>
@@ -526,8 +535,8 @@ VIEWS.data = (v) => {
   <div class="cols">
     <div class="panel"><div class="panel-h"><h2>Scoring settings</h2></div>
       <div class="form-row"><label for="setHrMax"><b>Max heart rate</b><span>Now ${M ? M.prof.hrMax : '–'} bpm, from ${esc(M ? M.prof.hrMaxSrc : 'default')}${prof.stravaHrMax && prof.hrMax ? ` · Strava zones suggest ${prof.stravaHrMax}` : ''}${mA && mA.hrMaxEst ? ` · Watch data suggests ${mA.hrMaxEst}` : ''}</span></label><input type="number" id="setHrMax" min="120" max="230" placeholder="auto" value="${prof.hrMax || ''}"></div>
-      <div class="form-row"><label for="setSleep"><b>Baseline sleep need</b><span>Hours of sleep you need on a rest day. Default by age: 8½ h under 18 (AASM: 8–10 h at 13–18), 8 h to 25, 7¾ h after${M && M.prof.age == null ? ' · set your birth year so the default fits' : ''}</span></label><input type="number" id="setSleep" min="5" max="11" step="0.25" placeholder="${M ? (M.prof.needBase / 60).toFixed(2).replace(/\.?0+$/, '') : '7.75'}" value="${prof.sleepNeedH || ''}"></div>
-      <div class="form-row"><label for="setBirth"><b>Birth year</b><span>Sets the sleep-need default and the age-based checks; fallback for max heart rate</span></label><input type="number" id="setBirth" min="1920" max="2020" placeholder="${mA && mA.dob ? esc(mA.dob.slice(0, 4)) : 'optional'}" value="${prof.birthYear || ''}"></div>
+      <div class="form-row"><label for="setSleep"><b>Baseline sleep need</b><span>Hours of sleep you need on a rest day. Default by age: 8½ h under 18 (AASM: 8–10 h at 13–18), 8 h to 25, 7¾ h after</span></label><input type="number" id="setSleep" min="5" max="11" step="0.25" placeholder="${M ? (M.prof.needBase / 60).toFixed(2).replace(/\.?0+$/, '') : '7.75'}" value="${prof.sleepNeedH || ''}"></div>
+      <div class="form-row"><label for="setBirth"><b>Birth year</b><span>Sets the sleep-need default and the age-based checks; fallback for max heart rate${M && M.prof.birthYearSrc === 'assumed' ? ' · assumed ' + M.prof.birthYear + ' (Leon) until you set it' : ''}</span></label><input type="number" id="setBirth" min="1920" max="2020" placeholder="${mA && mA.dob ? esc(mA.dob.slice(0, 4)) : (M ? String(M.prof.birthYear) : '2010')}" value="${prof.birthYear || ''}"></div>
       <div class="row" style="margin-top:12px"><button class="btn primary" data-action="save-settings">Save settings</button><span class="muted" id="setStatus" style="font-size:12px"></span></div>
     </div>
     <div class="panel prose"><div class="panel-h"><h2>How the scores work</h2></div>
@@ -712,6 +721,27 @@ function planImportHtml() {
   return `<div class="panel" id="planImport"><div class="panel-h"><h2>Add a plan</h2>${I.preview ? '<span class="chip st-done">check and save</span>' : ''}</div>${I.error ? `<div class="notice err" style="margin-bottom:12px">${esc(I.error)}</div>` : ''}${body}</div>`;
 }
 
+// the last 14 mornings of the check-in (Hooper 1995: in swimmers, well-being during the taper explained most of the performance gain,
+// and sleep + fatigue ratings predicted staleness weeks ahead of the physiology)
+function checkinTrendHtml(M, date) {
+  const J = M.journal || {}, days = []; for (let i = 13; i >= 0; i--) days.push(addDays(date, -i));
+  const rows = days.map(k => J[k] && J[k].readiness != null ? J[k] : null);
+  const n = rows.filter(Boolean).length; if (n < 3) return '';
+  const avg = (arr, f) => { const v = arr.filter(Boolean).map(f).filter(x => x != null); return v.length ? mean(v) : null; };
+  const r7 = avg(rows.slice(7), r => +r.readiness), rPrev = avg(rows.slice(0, 7), r => +r.readiness);
+  const f7 = avg(rows.slice(7), r => r.fatigue != null ? +r.fatigue : null), fPrev = avg(rows.slice(0, 7), r => r.fatigue != null ? +r.fatigue : null);
+  const race = M.goals && M.goals.races && M.goals.races[0];
+  const taper = race && race.days >= 0 && race.days <= 14;
+  let line = '';
+  if (r7 != null && rPrev != null) line = `Readiness averaged ${r7.toFixed(1)}/10 this week (${rPrev.toFixed(1)} the week before)${f7 != null && fPrev != null ? `, fatigue ${f7.toFixed(1)}/5 (${fPrev.toFixed(1)})` : ''}.`;
+  else if (r7 != null) line = `Readiness averaged ${r7.toFixed(1)}/10 over the last 7 mornings.`;
+  if (taper) line += ` Taper: how you feel these two weeks is the best predictor of race day there is (Hooper); rising readiness and falling fatigue is what a taper should look like.`;
+  else if (f7 != null && fPrev != null && f7 - fPrev >= 0.8) line += ' Fatigue rising week on week was the earliest sign of staleness in Hooper’s swimmers: an easy week now costs less than a lost month later.';
+  setTimeout(() => { const el = document.getElementById('c-ck'); if (!el || el.dataset.drawn) return; el.dataset.drawn = '1';
+    lineChart(el, { label: 'Morning check-in, last 14 days', height: 140, yMin: 0, yMax: 10, labels: days.map(fmtDayShort), tipHead: i => fmtDay(days[i]), fmtTip: x => x.toFixed(0),
+      series: [{ name: 'Readiness (higher = better)', values: rows.map(r => r ? +r.readiness : null), color: 'var(--rec-hi)', dots: true }, { name: 'Fatigue + soreness (higher = worse)', values: rows.map(r => r && r.fatigue != null && r.soreness != null ? +r.fatigue + +r.soreness : null), color: 'var(--rec-lo)', dots: true }] }); }, 0);
+  return `<div style="margin-top:14px"><div class="eyebrow">Last 14 mornings · ${n} check-ins</div><div class="legend" style="margin-top:6px"><span><i style="background:var(--rec-hi)"></i>Readiness 1–10</span><span><i style="background:var(--rec-lo)"></i>Fatigue + soreness 2–10</span></div><div class="chart" id="c-ck"></div>${line ? `<p class="muted" style="font-size:12px;margin:8px 0 0">${esc(line)}</p>` : ''}</div>`;
+}
 function sleepScoreHtml(d) {
   if (d.sleepScore == null) return '';
   const P = d.sleepParts, R = d.sleepRaw || {}, keys = Object.keys(SLEEP_WEIGHTS);

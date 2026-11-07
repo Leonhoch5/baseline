@@ -193,6 +193,61 @@ function sleepPlanner(d, M) {
     levels: { peak: bedFor(need), perform: bedFor(need * 0.85), getBy: bedFor(need * 0.7) }, keySession: keys[0] || null, debtPart, keyAdj };
 }
 
+// ---- week shape (Foster 1998): monotony = mean ÷ SD of the daily load over 7 days, strain = weekly load × monotony.
+// Illness and overtraining followed strain spikes and monotonous weeks (the same load every day), not high load as such.
+// "Easy load for tomorrow" (Runalyze): the most load tomorrow can carry without form (fitness − fatigue) dropping below zero.
+function weekShape(M, date) {
+  const d = M.day[date]; if (!d) return null;
+  const loads = []; for (let k = 6; k >= 0; k--) { const x = dayAt(M, date, -k); loads.push(x ? (x.load || 0) : 0); }
+  const sum = loads.reduce((a, b) => a + b, 0), m = sum / 7, sd = stdev(loads);
+  if (sum < 50) return null;
+  const monotony = sd > 0 ? m / sd : (m > 0 ? 7 : 0);
+  const strain = sum * monotony;
+  // the last 8 weeks for context
+  const hist = []; for (let w = 1; w <= 8; w++) { const end = addDays(date, -7 * w); const ls = []; for (let k = 6; k >= 0; k--) { const x = dayAt(M, end, -k); ls.push(x ? (x.load || 0) : 0); } const s2 = ls.reduce((a, b) => a + b, 0); if (s2 >= 50) { const mm = s2 / 7, sd2 = stdev(ls); hist.push({ sum: s2, monotony: sd2 > 0 ? mm / sd2 : 7, strain: s2 * (sd2 > 0 ? mm / sd2 : 7) }); } }
+  const medStrain = hist.length >= 3 ? median(hist.map(h => h.strain)) : null;
+  const kC = 1 - Math.exp(-1 / 42), kA = 1 - Math.exp(-1 / 7);
+  const easy = d.ctl != null ? Math.max(0, (d.ctl * (1 - kC) - d.atl * (1 - kA)) / (kA - kC)) : null;
+  const restDays = loads.filter(l => l < Math.max(15, m * 0.25)).length;
+  let tone = 'good', word = 'varied';
+  if (monotony >= 2 && (medStrain == null || strain > medStrain * 1.3)) { tone = 'bad'; word = 'monotonous and heavy'; }
+  else if (monotony >= 2) { tone = 'warn'; word = 'monotonous'; }
+  else if (medStrain != null && strain > medStrain * 1.5) { tone = 'warn'; word = 'a strain spike'; }
+  const text = tone === 'good' ? `Load varied day to day (monotony ${monotony.toFixed(1)}, ${restDays} light day${restDays === 1 ? '' : 's'}): the shape that keeps illness away.`
+    : word === 'a strain spike' ? `Weekly strain ${Math.round(strain)} is ${Math.round(strain / medStrain * 100 - 100)}% above your usual week. Spikes like this, more than high load itself, preceded illness in Foster's athletes; keep next week flat.`
+    : `Monotony ${monotony.toFixed(1)}: nearly the same load every day${restDays ? '' : ', no light day'}. Above 2 is where Foster saw illness and staleness rise. Make the hard day harder and the easy days easier rather than averaging them.`;
+  return { loads, sum, mean: m, sd, monotony, strain, medStrain, easy, easyStrain: easy != null ? strainOf(easy) : null, restDays, tone, word, text };
+}
+
+// ---- aerobic efficiency and durability: metres per heartbeat on steady runs, and HR drift on the long ones ----
+// Efficiency factor (TrainingPeaks): speed ÷ average heart rate on steady aerobic runs; rising over a block = aerobic fitness improving.
+// Decoupling / drift bands (Friel): ≤ 5 % sound aerobic endurance, 5–10 % moderate limitation or fatigue, > 10 % above the aerobic threshold or lacking endurance.
+function efficiencyTrend(M, date, days) {
+  days = days || 120;
+  const rows = [];
+  for (const a of M.acts) {
+    if (a.sport !== 'run' || a.date > date || daysBetween(a.date, date) > days) continue;
+    const mov = a.movS || a.durS; if (!a.avgHr || !a.distM || a.distM < 3000 || mov < 25 * 60) continue;
+    const z = a.hb ? zonesFromHist(a.hb, M.prof.hrMax, M.prof.zones) : null, zt = z ? z.reduce((x, y) => x + y, 0) : 0;
+    const hard = zt ? (z[3] + z[4]) / zt : null;
+    if (hard != null && hard > 0.15) continue;                  // intervals and races are not steady
+    if (a.an && a.an.segs && a.an.segs.length > 1) continue;     // several efforts found in the pace data
+    const speed = a.distM / mov;                                 // m/s
+    rows.push({ date: a.date, name: a.name, gid: a.gid, ef: speed * 60 / a.avgHr, speed, hr: a.avgHr, pace: 1000 / speed, drift: a.an ? a.an.drift : null, mins: mov / 60, km: a.distM / 1000, long: mov >= 60 * 60 });
+  }
+  rows.sort((a, b) => a.date < b.date ? -1 : 1);
+  if (rows.length < 3) return null;
+  const recent = rows.filter(r => daysBetween(r.date, date) <= 28), before = rows.filter(r => { const k = daysBetween(r.date, date); return k > 28 && k <= 56; });
+  const mean_ = arr => arr.length ? mean(arr.map(r => r.ef)) : null;
+  const efNow = mean_(recent), efBefore = mean_(before);
+  const change = efNow != null && efBefore != null ? efNow / efBefore - 1 : null;
+  const drifts = rows.filter(r => r.drift != null && r.mins >= 45);
+  const driftNow = drifts.filter(r => daysBetween(r.date, date) <= 42);
+  const driftMed = driftNow.length >= 2 ? median(driftNow.map(r => r.drift)) : null;
+  const driftWord = driftMed == null ? null : driftMed <= 5 ? 'sound aerobic endurance' : driftMed <= 10 ? 'some aerobic limitation or fatigue' : 'the long runs are above your aerobic threshold or too long for now';
+  return { rows, recent, before, efNow, efBefore, change, driftMed, driftN: driftNow.length, driftWord };
+}
+
 function intensityMix(M, date, days) {
   const z = [0, 0, 0, 0, 0]; let n = 0;
   for (let k = 0; k < days; k++) {
@@ -252,12 +307,20 @@ function dailyInsights(M, date) {
   if (sc && sc.tips.length) out.push({ tone: sc.tips[0].tone, h: 'Sleep', t: sc.tips[0].t, tab: 'sleep' });
   const ps = (M.plan && M.plan.sessions) || [];
   const missed = ps.filter(s => s.status === 'missed' && s.date < date && daysBetween(s.date, date) <= 7);
-  if (missed.length) out.push({ tone: missed.length >= 3 ? 'bad' : 'warn', h: `Missed ${missed.length} planned session${missed.length > 1 ? 's' : ''} this week`, t: missed.slice(0, 3).map(s => `${s.title} (${WD[parseYmd(s.date).getDay()]})`).join(', ') + (missed.length > 3 ? ' …' : '') + '. If it was done, it may not be on Strava yet. Otherwise tap Mark done in the Plan tab or let it go; don’t cram it into the coming days.', tab: 'plan' });
+  const ra = date === M.today ? realignment(M, date) : null;
+  if (missed.length && !(ra && ra.level !== 'few')) out.push({ tone: missed.length >= 3 ? 'bad' : 'warn', h: `Missed ${missed.length} planned session${missed.length > 1 ? 's' : ''} this week`, t: missed.slice(0, 3).map(s => `${s.title} (${WD[parseYmd(s.date).getDay()]})`).join(', ') + (missed.length > 3 ? ' …' : '') + '. If it was done, it may not be on Strava yet. Otherwise tap Mark done in the Plan tab or let it go; don’t cram it into the coming days.', tab: 'plan' });
   const key = ps.find(s => s.date > date && daysBetween(date, s.date) <= 10 && ['key', 'test', 'race'].includes(s.intensity));
   if (key) out.push({ tone: 'neutral', h: `${key.title} in ${daysBetween(date, key.date)} day${daysBetween(date, key.date) > 1 ? 's' : ''}`, t: `${fmtDay(key.date)}. Keep the 1–2 days before it easy and sleep well the two nights before.`, tab: 'plan' });
+  const bl = bodyLog(M, date);
+  if (bl && bl.spurt) out.push({ tone: 'warn', h: `Growth spurt: ${bl.rate.toFixed(1)} cm a year`, t: `${bl.ref.v} → ${bl.hLast.v} cm since ${fmtDayShort(bl.ref.date)}. At this rate bone and growth-plate injuries run 1.5–2× higher: no long-run jumps, no new plyometrics, keep intensity steady, and 1300 mg calcium a day (IOC youth statement).`, tab: 'journal' });
+  // fuel for today's long session (Jeukendrup): 1–2 h ≈ 30 g carbs/h, 2–2½ h up to 60, longer up to 90 g/h with glucose + fructose
+  const long = ps.filter(s => s.date === date && !s.isRest && (s.durationMin || 0) >= 90).sort((a, b) => (b.durationMin || 0) - (a.durationMin || 0))[0];
+  if (long && date >= M.today) { const h = long.durationMin / 60; out.push({ tone: 'neutral', h: `Fuel for “${long.title}” (${fmtDurLong(long.durationMin)})`, t: h < 2 ? 'About 30 g of carbohydrate an hour from the first hour (a gel, a banana or 500 ml of sports drink), plus water to thirst. Starting the session fed matters more than what you take during it.' : h < 2.5 ? 'Up to 60 g of carbohydrate an hour (two gels or a bar plus drink), starting in the first 30 minutes; 500–750 ml of fluid an hour in the heat.' : 'Up to 90 g an hour with a glucose + fructose mix: practise it, the gut has to be trained for it as much as the legs.', tab: 'plan' }); }
+  const ws = weekShape(M, date);
+  if (ws && ws.tone !== 'good' && date <= M.today) out.push({ tone: ws.tone, h: `Week shape: ${ws.word}`, t: ws.text, tab: 'strain' });
   const mix = intensityMix(M, date, 28);
   if (mix) out.push({ tone: mix.tone, h: 'Intensity mix, last 4 weeks', t: mix.t, tab: 'strain' });
-  return out.slice(0, 5);
+  return out.slice(0, 6);
 }
 
 // ---- body signals: several overnight measures off at once (WHOOP "Health Monitor" style) ----
@@ -370,6 +433,47 @@ function longRunGuard(M, date) {
     else if (s.durationMin && ref.durS) { const mins = ref.durS / 60; if (s.durationMin > mins * 1.1 && s.durationMin >= 50) out.push({ s, planMin: s.durationMin, ref, pct: s.durationMin / mins - 1 }); }
   }
   return out;
+}
+
+// ---- body log: height and weight from the journal; growth rate as the youth guard-rail ----
+// Adolescent athletes growing faster than their peers had ×1.47 the bone-injury rate and ×2.14 the growth-plate injuries per 1 SD of
+// extra stature growth (Manchester Met 2023, mean age 13.4); peak height velocity in boys is about 8–10 cm a year.
+function bodyLog(M, date) {
+  const J = M.journal || {}, hs = [], ws = [];
+  for (const k of Object.keys(J).sort()) { if (k > date) continue; const e = J[k]; if (e.height > 0) hs.push({ date: k, v: +e.height }); if (e.weight > 0) ws.push({ date: k, v: +e.weight }); }
+  if (!hs.length && !ws.length) return null;
+  const hLast = hs[hs.length - 1] || null, wLast = ws[ws.length - 1] || null;
+  // growth rate: latest height vs the last entry at least 60 days earlier, as cm per year
+  let rate = null, ref = null;
+  if (hLast) { ref = [...hs].reverse().find(h => daysBetween(h.date, hLast.date) >= 60) || null; if (ref) rate = (hLast.v - ref.v) / daysBetween(ref.date, hLast.date) * 365; }
+  const spurt = rate != null && rate >= 7;
+  let wRef = null, wChange = null;
+  if (wLast) { wRef = [...ws].reverse().find(w => daysBetween(w.date, wLast.date) >= 28) || null; if (wRef) wChange = wLast.v - wRef.v; }
+  return { hs, ws, hLast, wLast, rate, ref, spurt, wRef, wChange, stale: hLast ? daysBetween(hLast.date, date) > 45 : true };
+}
+
+// ---- realignment after missed sessions (Runna's rules): 1–3 missed in a week → drop them, keep the key sessions;
+// more than 3, or a whole week → don't stack them, make the coming days easier and rebuild from there;
+// most of 4 weeks missed → re-test before any quality work, the old paces no longer apply ----
+function realignment(M, date) {
+  const ps = (M.plan && M.plan.sessions) || []; if (!ps.length) return null;
+  const inWin = (s, a, b) => s.date >= a && s.date <= b && !s.isRest && !s.optional && s.status !== 'sick';
+  const w0 = addDays(date, -7), w1 = addDays(date, -1);
+  const week = ps.filter(s => inWin(s, w0, w1)), wMissed = week.filter(s => s.status === 'missed');
+  const m0 = addDays(date, -28);
+  const month = ps.filter(s => inWin(s, m0, w1)), mMissed = month.filter(s => s.status === 'missed');
+  const sickDays = M.plan.blocks ? M.plan.blocks.filter(b => b.kind === 'sick' && b.start <= w1 && (b.endEff || b.start) >= m0).length : 0;
+  let level = null;
+  if (month.length >= 8 && mMissed.length / month.length >= 0.7) level = 'month';
+  else if (week.length >= 2 && (wMissed.length > 3 || wMissed.length === week.length)) level = 'week';
+  else if (wMissed.length >= 1 && wMissed.length <= 3) level = 'few';
+  if (!level) return null;
+  const next = ps.filter(s => s.date >= date && daysBetween(date, s.date) <= 6 && !s.isRest && !s.optional);
+  const keys = next.filter(s => ['hard', 'key', 'test', 'race'].includes(s.intensity));
+  const text = level === 'month' ? `${mMissed.length} of ${month.length} planned sessions in the last 4 weeks were missed${sickDays ? ' (some while sick)' : ''}. After a gap like that the paces in the plan no longer fit: start with two easy weeks and a re-test (CSS, 5 km) before any quality session.`
+    : level === 'week' ? `${wMissed.length} of ${week.length} planned sessions last week were missed. Don’t stack them on top of this week: replace the coming days with an easier version of the plan and rebuild from there${keys.length ? `; keep “${keys[0].title}” as the one quality session if the first days go well` : ''}.`
+    : `${wMissed.length} session${wMissed.length > 1 ? 's' : ''} missed last week: let ${wMissed.length > 1 ? 'them' : 'it'} go. This week’s key session${keys.length > 1 ? 's' : ''} ${keys.length ? `(${keys.map(k => k.title).join(', ')}) ` : ''}stay${keys.length === 1 ? 's' : ''}; the missed ones are not added back.`;
+  return { level, week: week.length, wMissed: wMissed.length, month: month.length, mMissed: mMissed.length, keys, text, weeks: level === 'month' ? 2 : 1 };
 }
 
 // ---- short morning summary (iPhone notification after the Shortcut syncs; standalone /api/ingest) ----

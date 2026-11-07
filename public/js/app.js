@@ -693,6 +693,15 @@ function boot() {
       const d = S.jdate; S.jdraft[d] = { ...((S.model && S.model.journal[d]) || {}), ...(S.jdraft[d] || {}), note: e.target.value };
       const btn = document.querySelector('[data-action="jsave"]'); if (btn) btn.disabled = false;
     }
+    // body log: height (cm) and weight (kg) typed into the journal day
+    if (e.target.dataset && e.target.dataset.jnum) {
+      const d = S.jdate, k = e.target.dataset.jnum, v = parseFloat(String(e.target.value).replace(',', '.'));
+      const base = { ...((S.model && S.model.journal[d]) || {}), ...(S.jdraft[d] || {}) };
+      if (isFinite(v) && v > 0) base[k] = Math.round(v * 10) / 10; else delete base[k];
+      const note = document.getElementById('jnote'); if (note) base.note = note.value;
+      S.jdraft[d] = base;
+      const btn = document.querySelector('[data-action="jsave"]'); if (btn) btn.disabled = false;
+    }
   });
   window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => { if (Math.abs(window.innerWidth - lastW) > 30) render(); }, 160); });
   const h = (location.hash || '').slice(1); const saved = lsGet('baseline.tab');
