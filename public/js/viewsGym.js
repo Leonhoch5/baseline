@@ -11,7 +11,7 @@ function gymEmptyHtml(M, sm) {
   const n = sm ? sm.logged : 0;
   return `<div class="panel"><div class="panel-h"><h2>Gym</h2></div>
     <p>${n ? `${n} strength session${n > 1 ? 's' : ''} in the last 6 months, but no exercises on any of them yet.` : 'No strength sessions in the last 6 months.'}</p>
-    <p class="muted">${window.BASELINE_STRAVA ? 'Strava’s public API does not hand out the exercises you log in the app, so here they are typed in: open a session under Activities and press “Add sets” (copy the list from the Strava app). The Claude version fetches them automatically; a Backup and move brings them across.' : 'Press Sync (Settings → Strava) and the exercises, weights and reps you logged in Strava come across with the activities.'}</p></div>`;
+    <p class="muted">${window.BASELINE_STRAVA ? 'The exercises, weights and reps you log in Strava are read every night by a scheduled Claude task (Strava’s public API has no sets endpoint) and land here by the morning; sessions logged with Bevel come in with the sync itself.' : 'Press Sync (Settings → Strava) and the exercises, weights and reps you logged in Strava come across with the activities.'}</p></div>`;
 }
 function gymExerciseChart(v, r) {
   const el = v.querySelector('#c-gym-ex'); if (!el || !r) return;
@@ -60,7 +60,7 @@ VIEWS.gym = (v) => {
       ${bal.missing.length ? `<p class="muted" style="font-size:12px;margin:10px 0 0">Not trained in the last 4 weeks: <b>${bal.missing.join(', ')}</b>. For a swimmer-runner the posterior chain (glutes, hamstrings), calves and core carry the most over; 2 sessions a week with 2–4 hard sets per lift are enough (Rønnestad & Mujika 2014, Beattie 2014).</p>` : '<p class="muted" style="font-size:12px;margin:10px 0 0">The endurance-relevant groups are all covered.</p>'}</div>
     <div class="panel"><div class="panel-h"><h2>Weeks</h2><span class="aside">newest first</span></div>
       <div class="table-wrap"><table class="t"><thead><tr><th>Week</th><th class="num">Sessions</th><th class="num">Time</th><th class="num">Sets</th><th class="num">Tonnage</th></tr></thead><tbody>${weekRows}</tbody></table></div>
-      ${sm.missing.length ? `<p class="muted" style="font-size:12px;margin:8px 0 0">${sm.missing.length} strength session${sm.missing.length > 1 ? 's' : ''} without exercises (${sm.missing.slice(0, 3).map(a => fmtDayShort(a.date)).join(', ')}${sm.missing.length > 3 ? '…' : ''}): ${window.BASELINE_STRAVA ? 'paste them under Activities' : 'sync again, or paste them under Activities'}.</p>` : ''}</div>
+      ${sm.missing.length ? `<p class="muted" style="font-size:12px;margin:8px 0 0">${sm.missing.length} strength session${sm.missing.length > 1 ? 's' : ''} without exercises (${sm.missing.slice(0, 3).map(a => fmtDayShort(a.date)).join(', ')}${sm.missing.length > 3 ? '…' : ''}): ${window.BASELINE_STRAVA ? 'nothing was logged in Strava for them, or the nightly read has not run yet' : 'sync again'}.</p>` : ''}</div>
   </div>
   ${lastHtml}
   <p class="muted" style="font-size:12px">Cardio load (strain, fitness, the load ratio) is unchanged by this tab: gym sessions still count through heart rate. Progress here is measured in weight on the bar, not in minutes.</p>`;

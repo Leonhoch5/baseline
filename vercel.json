@@ -25,6 +25,9 @@
     "api/strava/[action].js": {
       "includeFiles": "public/js/**",
       "maxDuration": 60
+    },
+    "api/ingest-sets.js": {
+      "maxDuration": 30
     }
   }
 }
