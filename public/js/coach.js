@@ -116,7 +116,7 @@ function reviewSession(M, s) {
   }
   // 4a. gym: what was lifted, against the last time (the sets come from Strava's strength logging)
   let lifted = null;
-  if (a.sets && a.sets.length && typeof gymReview === 'function') { lifted = gymReview(M, a); if (lifted) notes.push(lifted.text); }
+  if (a.sets && a.sets.length && typeof gymReview === 'function' && gymEnabled()) { lifted = gymReview(M, a); if (lifted) notes.push(lifted.text); }
   // 4c. long-run jump: more than 10% beyond the longest run of the previous 30 days (Frandsen 2025's injury predictor)
   let jump = null;
   if (s.sportKey === 'run' && a.distM >= 3000 && typeof longestRun30 === 'function') {

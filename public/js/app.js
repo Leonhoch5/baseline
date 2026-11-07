@@ -1,7 +1,7 @@
 // ---------- app state, storage, actions ----------
 function emptyData() { return { apple: {}, strava: {}, journal: {}, planMeta: null, planSessions: [], planWeeks: [], plans: [], planChecks: {}, planEdits: {}, preds: {}, coach: {}, profile: {}, tests: { list: [] }, overlaps: { split: {} }, metaApple: null, metaStrava: null, metaDrive: null }; }
 // five main sections; the leaf views inside them keep their own ids (used in links and the URL)
-const GROUPS = { today: ['today'], sleep: ['sleep'], training: ['strain', 'activities', 'gym', 'plan', 'race'], trends: ['trends', 'recovery', 'model'], journal: ['journal'] };
+const GROUPS = { today: ['today'], sleep: ['sleep'], training: gymEnabled() ? ['strain', 'activities', 'gym', 'plan', 'race'] : ['strain', 'activities', 'plan', 'race'], trends: ['trends', 'recovery', 'model'], journal: ['journal'] };
 const NAV = ['today', 'sleep', 'training', 'trends', 'journal'];
 const NAV_LABEL = { today: 'Today', sleep: 'Sleep', training: 'Training', trends: 'Trends', journal: 'Journal', data: 'Settings' };
 const SUB_LABEL = { strain: 'Load', activities: 'Activities', gym: 'Gym', plan: 'Plan', race: 'Race', trends: 'Trends', recovery: 'Recovery', model: 'How it works' };

@@ -51,14 +51,14 @@ function actRow(a, M, showDate) {
 // the gym sets under a strength activity, with the paste box when they are missing or being edited
 function gymRowHtml(a, M) {
   const isGym = a.sport === 'strength' || a.sport === 'hiit' || (a.sets && a.sets.length);
-  if (!isGym) return '';
+  if (!isGym || !gymEnabled()) return '';
   const editing = S.setsEdit && S.setsEdit.gid === a.gid;
   if (editing) {
     const txt = S.setsEdit.text != null ? S.setsEdit.text : (a.sets || []).map(x => `${x.e} ${x.kg != null ? x.kg + ' kg' : ''}${x.r != null ? ' × ' + x.r : ''}${x.s != null ? ' ' + x.s + ' s' : ''}`.trim()).join('\n');
     return `<div class="sets-edit" style="margin-top:8px"><textarea id="setsText" rows="6" placeholder="One set per line, or an exercise line followed by its sets:\nIncline Dumbbell Bench Press 22.5 kg × 7\nWeighted Chin-Up 7.5 kg × 5\nPull Up × 10\nRDL\n50 kg x 10, 70 x 8, 90 x 5">${esc(txt)}</textarea>
       <div class="row" style="gap:6px;margin-top:6px"><button class="btn sm primary" data-action="sets-save" data-gid="${esc(a.gid)}">Save sets</button><button class="btn sm ghost" data-action="sets-cancel">Cancel</button>${S.setsEdit.err ? `<span class="muted" style="color:var(--rec-lo)">${esc(S.setsEdit.err)}</span>` : '<span class="muted" style="font-size:12px">Copy the exercises from the Strava app; “× reps”, “kg”, “s” and “m:ss” are understood.</span>'}</div></div>`;
   }
-  if (!a.sets || !a.sets.length) return `<div class="m" style="margin-top:6px"><span class="muted">${a.setsDone ? 'No exercises logged in Strava for this one' : window.BASELINE_STRAVA ? 'Exercises arrive with the nightly Strava read' : 'Exercises arrive with the next Strava sync'}</span>${S.setsEdit !== null && false ? '' : `<button class="btn sm ghost" data-action="sets-edit" data-gid="${esc(a.gid)}" title="Type them in if Strava has none">Add by hand</button>`}</div>`;
+  if (!a.sets || !a.sets.length) return `<div class="m" style="margin-top:6px"><span class="muted">${a.setsDone ? 'No exercises logged in Strava for this one' : 'Exercises arrive with the next Strava sync'}</span>${S.setsEdit !== null && false ? '' : `<button class="btn sm ghost" data-action="sets-edit" data-gid="${esc(a.gid)}" title="Type them in if Strava has none">Add by hand</button>`}</div>`;
   const ss = strengthSession(a, bodyWeightKg(M, a.date));
   const ex = ss.exercises.map(x => `<span class="chip" title="${esc(x.sets.map(st => fmtSet(st, x.bw)).join(', '))}">${esc(x.name)} <b>${x.top ? esc(fmtSet(x.top, x.bw)) : x.sets.length + ' sets'}</b>${x.e1 != null ? `<span class="muted"> · e1RM ${Math.round(x.e1)}</span>` : ''}</span>`).join('');
   return `<div class="m gym-sets" style="margin-top:6px;gap:4px">${ex}<span class="muted">${ss.nSets} sets · ${(ss.tonnage / 1000).toFixed(1)} t${a.setsSrc === 'manual' ? ' · pasted' : ''}</span><button class="btn sm ghost" data-action="sets-edit" data-gid="${esc(a.gid)}" title="Edit the sets">Edit</button></div>`;
@@ -312,7 +312,7 @@ VIEWS.activities = (v) => {
     ${M.splitPairs.length ? `<div class="day-label">Kept separate by you</div>${M.splitPairs.map(p => `<div class="row" style="padding:6px 0;justify-content:space-between"><span>${esc(p.a.name || SPORT_LABEL[p.a.sport])} · ${esc(p.b.name || SPORT_LABEL[p.b.sport])} <span class="muted">(${esc(fmtDay(p.a.start.slice(0, 10)))})</span></span><button class="btn sm" data-action="merge" data-key="${esc(p.key)}">Merge again</button></div>`).join('')}` : ''}
   </div>
   <div class="panel"><div class="panel-h"><h2>All activities</h2>
-    <div class="seg" role="group" aria-label="Filter activities">${[['all', 'All'], ['gym', 'Gym'], ['merged', 'Merged'], ['strava', 'Strava only'], ['watch', 'Apple only']].map(([k, l]) => `<button aria-pressed="${f === k}" data-action="actfilter" data-f="${k}">${l}</button>`).join('')}</div></div>
+    <div class="seg" role="group" aria-label="Filter activities">${[['all', 'All'], ...(gymEnabled() ? [['gym', 'Gym']] : []), ['merged', 'Merged'], ['strava', 'Strava only'], ['watch', 'Apple only']].map(([k, l]) => `<button aria-pressed="${f === k}" data-action="actfilter" data-f="${k}">${l}</button>`).join('')}</div></div>
     ${shown.length ? `<div class="acts">${body}</div>` : '<p class="muted">No activities match this filter.</p>'}
     ${list.length > shown.length ? `<div class="row" style="justify-content:center;margin-top:12px"><button class="btn" data-action="more-acts">Show more (${list.length - shown.length} left)</button></div>` : ''}
   </div>`;
@@ -542,6 +542,7 @@ VIEWS.data = (v) => {
       ${window.BASELINE_STRAVA ? stravaServerHtml(mS, sync) : `<p class="sub" style="margin:0 0 12px">Live sync uses your Strava connector in Claude. Activities come in with name, distance and elevation, and heart rate for workouts your Watch didn't record.</p>
       <div class="row"><button class="btn primary" data-action="strava-sync" ${sync && sync.running ? 'disabled' : ''}>${sync && sync.running ? 'Syncing…' : mS && mS.lastSync ? 'Sync now' : 'Connect and sync'}</button>${mS && mS.lastSync ? `<button class="btn ghost" data-action="strava-full" ${sync && sync.running ? 'disabled' : ''}>Re-sync full history</button>` : ''}</div>
       <div id="syncStatus" style="margin-top:12px">${syncStatusHtml(sync)}</div>`}
+      ${gymEnabled() ? '' : `<p class="muted" style="font-size:12px;margin:12px 0 0"><b>Gym tab parked in this version.</b> Strava’s API does not return the exercises, weights and reps logged in Strava (Nov 2026: upload only), so the app cannot read them without a middleman. Strength sessions still count in the load through heart rate; the Gym tab switches on the day Strava opens that up.</p>`}
       <details style="margin-top:14px"><summary class="muted" style="cursor:pointer;font-size:13px">Import a Strava export file instead</summary>
         <p class="muted" style="font-size:12px">On strava.com: Settings → My Account → Download or Delete Your Account → Request your archive. Drop the zip (or its activities.csv) here.</p>
         <label class="drop"><input type="file" id="fileStrava" accept=".zip,.csv,application/zip,text/csv"><b>Choose Strava export</b><span class="muted" style="font-size:12px">zip or activities.csv</span></label></details>

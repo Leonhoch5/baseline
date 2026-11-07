@@ -2,6 +2,9 @@
 const DAY_MS = 86400000;
 const HB_BASE = 70;      // histogram: 5-bpm bins starting at 70 bpm
 const HB_BINS = 28;      // 70..209
+// Gym tab (weights, reps, e1RM) is on unless the host sets BASELINE_GYM = false. The Vercel app sets it off: Strava's public API does not
+// return the sets logged in Strava (Nov 2026), so there the feature is parked until it does; the Claude version reads them through the connector.
+function gymEnabled() { return typeof globalThis === 'undefined' || globalThis.BASELINE_GYM !== false; }
 function pad2(n) { return n < 10 ? '0' + n : '' + n; }
 function ymd(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
 function parseYmd(s) { const y = +s.slice(0, 4), m = +s.slice(5, 7), d = +s.slice(8, 10); return new Date(y, m - 1, d); }
