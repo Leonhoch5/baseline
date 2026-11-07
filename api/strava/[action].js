@@ -10,6 +10,7 @@
 import { callerOk } from '../../lib/auth.js';
 import { configured, missingSettings, authorizeUrl, verifyState, exchangeCode, loadAuth, deauthorize, listSubscriptions, createSubscription, deleteSubscription, verifyTokenOk, clearAuth } from '../../lib/strava.js';
 import { syncActivities, upsertActivity, removeAct } from '../../lib/stravaSync.js';
+import { probe as mcpProbe } from '../../lib/stravaMcp.js';
 import { readColl } from '../../lib/store.js';
 
 export const config = { api: { bodyParser: { sizeLimit: '1mb' } } };
@@ -70,6 +71,10 @@ export default async function handler(req, res) {
       const missing = missingSettings().filter(m => m !== 'STRAVA_VERIFY_TOKEN');
       if (missing.length) return fail(503, 'not_configured', 'Missing in Vercel: ' + missing.join(', '));
       return send(200, { url: authorizeUrl(baseUrl(req) + '/api/strava/callback') });
+    }
+    if (action === 'mcpprobe') {
+      // does the token we hold open Strava's MCP server (the only place the gym sets come from)?
+      try { return send(200, await mcpProbe()); } catch (e) { return send(200, { ok: false, code: e.code || 'mcp', message: e.message }); }
     }
     if (action === 'sync') {
       if (req.method !== 'POST') return fail(405, 'method', 'use POST');
