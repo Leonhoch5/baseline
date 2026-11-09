@@ -108,6 +108,7 @@ function bodyPanelHtml(M, date) {
       ${tile('Height', b.hLast ? String(b.hLast.v) : null, 'cm', b.hLast ? `${fmtDayShort(b.hLast.date)} · ${rateTxt}` : 'not logged', b.spurt ? 'delta-bad' : '')}
       ${tile('Weight', b.wLast ? String(b.wLast.v) : null, 'kg', b.wLast ? `${fmtDayShort(b.wLast.date)}${b.wChange != null ? ` · ${b.wChange >= 0 ? '+' : '−'}${Math.abs(b.wChange).toFixed(1)} kg vs ${fmtDayShort(b.wRef.date)}` : ''}` : 'not logged', '')}
     </div>
+    ${b.creatine ? `<p class="muted" style="font-size:12px;margin:${b.spurt ? 0 : 10}px 0 0">Creatine since ${fmtDayShort(b.creatine.since)}${b.creatine.dose ? ' (' + esc(b.creatine.dose) + ')' : ''}: the first 0.5–2 kg of this rise are water in the muscle, not fat and not growth (ISSN 2017). Judge weight again from ${fmtDayShort(addDays(b.creatine.since, 42))}.</p>` : ''}
     ${b.spurt ? insightList([{ tone: 'warn', t: `Growth spurt. Faster-than-peers stature growth went with ×1.5 bone injuries and ×2 growth-plate injuries in adolescent athletes: hold run volume, no long-run jumps, no new jumping work, and watch heels and knees (Sever’s, Osgood-Schlatter).` }]) : ''}
   </div>`;
 }

@@ -298,12 +298,15 @@ function coachNotePrompt(M, date) {
   // long-run jump warnings for the coming week
   const lg = typeof longRunGuard === 'function' ? longRunGuard(M, date) : [];
   if (lg.length) ctx.longRunWarning = lg.map(g => ({ session: g.s.title, date: g.s.date, planned: g.planM ? g.planM / 1000 + ' km' : g.planMin + ' min', longestLast30Days: g.ref.distM ? g.ref.distM / 1000 + ' km' : null, jumpPct: Math.round(g.pct * 100), rule: 'runs >10% beyond the longest of the last 30 days are the strongest injury predictor' }));
+  // supplements the data has to be read against (creatine: water weight in the first weeks)
+  const sup = typeof supplementsOn === 'function' ? supplementsOn(M, date) : [];
+  if (sup.length) ctx.supplements = sup.map(x => ({ name: x.name, dose: x.dose || null, day: x.days != null ? x.days + 1 : null, note: x.creatine ? (x.days == null || x.days <= 42 ? 'stores filling over ~4 weeks; a body-weight rise of 0.5–2 kg in this time is water in the muscle, not fat; a kilo costs a little running economy in a run race' : 'stores saturated; weight is stable from here') : null }));
   // tonight's bedtime
   const tn = typeof sleepPlanner === 'function' && M.day[date] ? sleepPlanner(M.day[date], M) : null;
   if (tn) ctx.tonight = { inBedBy: fmtClock(tn.bed, true), needH: +(tn.need / 60).toFixed(1), wakeAt: fmtClock(tn.wake, true), beforeKeySession: tn.keySession ? tn.keySession.title : null };
   return `You are the athlete's coach. Judge this day against the training plan and the goal, in plain direct language, second person, no praise padding, no medical claims.
 Use ONLY the data below; do not invent numbers. Mention the goal race by name when relevant. Be specific about what was right and what was off, and give ONE concrete instruction for tomorrow.
-If dayStatus is yellow or red, never add intensity: hold or reduce. If racePlan is present, the note must carry its splits and the first-km rule. If longRunWarning is present, say so in one sentence. If tonight is present, end the note with the bedtime.
+If dayStatus is yellow or red, never add intensity: hold or reduce. If racePlan is present, the note must carry its splits and the first-km rule. If longRunWarning is present, say so in one sentence. If supplements lists creatine, read any body-weight rise in its first weeks as water and never give dosing advice. If tonight is present, end the note with the bedtime.
 Reply with ONLY a JSON object: {"verdict": "3-6 words", "note": "60-120 words judging the day", "tomorrow": "one sentence instruction for tomorrow"}.
 
 DATA:

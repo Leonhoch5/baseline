@@ -311,6 +311,12 @@ function dailyInsights(M, date) {
   if (missed.length && !(ra && ra.level !== 'few')) out.push({ tone: missed.length >= 3 ? 'bad' : 'warn', h: `Missed ${missed.length} planned session${missed.length > 1 ? 's' : ''} this week`, t: missed.slice(0, 3).map(s => `${s.title} (${WD[parseYmd(s.date).getDay()]})`).join(', ') + (missed.length > 3 ? ' …' : '') + '. If it was done, it may not be on Strava yet. Otherwise tap Mark done in the Plan tab or let it go; don’t cram it into the coming days.', tab: 'plan' });
   const key = ps.find(s => s.date > date && daysBetween(date, s.date) <= 10 && ['key', 'test', 'race'].includes(s.intensity));
   if (key) out.push({ tone: 'neutral', h: `${key.title} in ${daysBetween(date, key.date)} day${daysBetween(date, key.date) > 1 ? 's' : ''}`, t: `${fmtDay(key.date)}. Keep the 1–2 days before it easy and sleep well the two nights before.`, tab: 'plan' });
+  const cr = creatineStatus(M, date);
+  if (cr && cr.days != null && cr.days <= 6) {
+    const rp = typeof racePacing === 'function' ? racePacing(M) : null;
+    const raceDays = rp && rp.date ? daysBetween(cr.since, rp.date) : null;
+    out.push({ tone: 'neutral', h: `Creatine, day ${cr.days + 1}${cr.dose ? ' · ' + cr.dose : ''}`, t: `At this dose the muscle stores fill over about 4 weeks, no loading phase needed: same amount every day, with a meal, any time; drink to thirst. Expect the scale to rise 0.5–2 kg in those weeks — water in the muscle, not fat (the Body panel and the coach know this).${raceDays != null && raceDays >= 0 && raceDays <= 42 ? ` The ${rp.race} falls on day ${raceDays + 1}: a kilo of water costs a little running economy over 10 km (roughly 1 %, half a minute at your pace); the gain is for the gym and the short hard work. Your call whether to keep it through race week.` : ''}`, tab: 'journal' });
+  } else if (cr && cr.days != null && cr.days >= 28 && cr.days <= 34) out.push({ tone: 'good', h: 'Creatine: stores full', t: `Four weeks at ${cr.dose || 'the maintenance dose'}: the muscle stores are saturated now. Strength gains from here are yours; the weight step of the last weeks was water (Kreider 2017).`, tab: 'gym' });
   const bl = bodyLog(M, date);
   if (bl && bl.spurt) out.push({ tone: 'warn', h: `Growth spurt: ${bl.rate.toFixed(1)} cm a year`, t: `${bl.ref.v} → ${bl.hLast.v} cm since ${fmtDayShort(bl.ref.date)}. At this rate bone and growth-plate injuries run 1.5–2× higher: no long-run jumps, no new plyometrics, keep intensity steady, and 1300 mg calcium a day (IOC youth statement).`, tab: 'journal' });
   // fuel for today's long session (Jeukendrup): 1–2 h ≈ 30 g carbs/h, 2–2½ h up to 60, longer up to 90 g/h with glucose + fructose
@@ -435,6 +441,20 @@ function longRunGuard(M, date) {
   return out;
 }
 
+// ---- supplements: what is taken (settings/profile.supplements [{name, dose, since, until}]) and what the data should show for it ----
+// Creatine is the one with a footprint in the numbers: at a 3–5 g/day maintenance dose the muscle stores fill over about 4 weeks (no loading
+// phase needed) and body mass rises 0.5–2 kg from intracellular water in that time (ISSN position stand, Kreider 2017; Antonio 2021). For a
+// runner the extra kilo costs a little running economy (Balsom 1993 saw a slower 6 km after loading), so a run race in the first weeks gets a note.
+function isCreatine(x) { return /creatin|kreatin/i.test((x && x.name) || ''); }
+function supplementsOn(M, date) {
+  return ((M.prof && M.prof.supplements) || []).filter(x => (!x.since || x.since <= date) && (!x.until || x.until >= date))
+    .map(x => ({ ...x, days: x.since ? daysBetween(x.since, date) : null, creatine: isCreatine(x) }));
+}
+function creatineStatus(M, date) {
+  const c = supplementsOn(M, date).find(x => x.creatine); if (!c) return null;
+  const days = c.days;
+  return { ...c, phase: days == null ? 'on' : days < 28 ? 'filling' : 'saturated', waterWindow: days == null || days <= 42 };
+}
 // ---- body log: height and weight from the journal; growth rate as the youth guard-rail ----
 // Adolescent athletes growing faster than their peers had ×1.47 the bone-injury rate and ×2.14 the growth-plate injuries per 1 SD of
 // extra stature growth (Manchester Met 2023, mean age 13.4); peak height velocity in boys is about 8–10 cm a year.
@@ -449,7 +469,10 @@ function bodyLog(M, date) {
   const spurt = rate != null && rate >= 7;
   let wRef = null, wChange = null;
   if (wLast) { wRef = [...ws].reverse().find(w => daysBetween(w.date, wLast.date) >= 28) || null; if (wRef) wChange = wLast.v - wRef.v; }
-  return { hs, ws, hLast, wLast, rate, ref, spurt, wRef, wChange, stale: hLast ? daysBetween(hLast.date, date) > 45 : true };
+  // a weight step across the creatine start is water in the muscle first (0.5–2 kg over the first 4–6 weeks), not fat and not growth
+  const cr = creatineStatus(M, date);
+  const creatine = cr && cr.since && wLast && wChange != null && wChange > 0 && wRef.date < cr.since && daysBetween(cr.since, wLast.date) <= 42 ? { since: cr.since, dose: cr.dose || '' } : null;
+  return { hs, ws, hLast, wLast, rate, ref, spurt, wRef, wChange, creatine, stale: hLast ? daysBetween(hLast.date, date) > 45 : true };
 }
 
 // ---- realignment after missed sessions (Runna's rules): 1–3 missed in a week → drop them, keep the key sessions;

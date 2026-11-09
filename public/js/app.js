@@ -370,6 +370,22 @@ async function driveSync(opts) {
   } catch (e) { console.warn('drive', e); S.driveSync = e && e.code ? driveErrorState(e) : { error: humanError(e) }; }
   refreshDrive(); changed();
 }
+// "Creatine monohydrate, 4 g/day, 2026-11-09[, until 2027-01-31]" → { name, dose, since, until }; false when a line cannot be read
+function parseSupplements(text) {
+  const out = [];
+  for (const raw of String(text || '').split(/\n/)) {
+    const line = raw.trim(); if (!line) continue;
+    const parts = line.split(/\s*[,;·|]\s*/).filter(Boolean);
+    const name = parts.shift(); if (!name || name.length > 60 || /^\d{4}-\d{2}-\d{2}$/.test(name)) return false;
+    const o = { name: name.slice(0, 60) };
+    for (const q of parts) {
+      const until = q.match(/^(?:until|bis|to)\s+(\d{4}-\d{2}-\d{2})$/i); const dt = q.match(/^(\d{4}-\d{2}-\d{2})$/);
+      if (until) o.until = until[1]; else if (dt) o.since = dt[1]; else if (!o.dose) o.dose = q.slice(0, 40); else return false;
+    }
+    out.push(o);
+  }
+  return out;
+}
 async function saveProfile(patch) {
   const next = { ...(S.real.profile || {}) };
   for (const k in patch) { if (patch[k] == null || patch[k] === '') delete next[k]; else next[k] = patch[k]; }
@@ -543,8 +559,10 @@ const ACTIONS = {
     if (hrMax != null && !(hrMax >= 120 && hrMax <= 230)) { st.textContent = 'Max heart rate must be between 120 and 230.'; return; }
     if (sn != null && !(sn >= 5 && sn <= 11)) { st.textContent = 'Sleep need must be between 5 and 11 hours.'; return; }
     if (by != null && !(by >= 1920 && by <= 2020)) { st.textContent = 'Enter a birth year between 1920 and 2020.'; return; }
+    const supplements = parseSupplements((document.getElementById('setSupps') || {}).value || '');
+    if (supplements === false) { st.textContent = 'Supplements: one per line, e.g. “Creatine monohydrate, 4 g/day, 2026-11-09”.'; return; }
     b.disabled = true;
-    try { await saveProfile({ hrMax, sleepNeedH: sn, birthYear: by }); st.textContent = 'Saved. Scores updated.'; changed(); }
+    try { await saveProfile({ hrMax, sleepNeedH: sn, birthYear: by, supplements: supplements.length ? supplements : null }); st.textContent = 'Saved. Scores updated.'; changed(); }
     catch (e) { st.textContent = humanError(e); }
     b.disabled = false;
   },

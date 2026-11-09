@@ -280,7 +280,7 @@ function buildModel(D) {
     const L = (n) => { let s = 0; for (let k = Math.max(0, i - n + 1); k <= i; k++) s += out[dates[k]].load || 0; return s / n; };
     d.acute = L(7); d.chronic = i >= 13 ? L(28) : null; d.acwr = d.chronic ? d.acute / d.chronic : null;
   }
-  const model = { prof: { hrMax, hrMaxSrc, needBase, age, birthYear, birthYearSrc: prof.birthYear ? 'you' : metaA.dob ? 'Apple Health' : 'assumed', zones: zb, zoneSrc: zb ? 'Strava' : '% of max HR' }, acts: ov.acts, pairs: ov.pairs, splitPairs: ov.splitPairs, journal, dates, day: out, first, last, today };
+  const model = { prof: { hrMax, hrMaxSrc, needBase, age, birthYear, birthYearSrc: prof.birthYear ? 'you' : metaA.dob ? 'Apple Health' : 'assumed', zones: zb, zoneSrc: zb ? 'Strava' : '% of max HR', supplements: Array.isArray(prof.supplements) ? prof.supplements.filter(x => x && x.name) : [] }, acts: ov.acts, pairs: ov.pairs, splitPairs: ov.splitPairs, journal, dates, day: out, first, last, today };
   model.plan = buildPlan(D, actsByDay, today);
   model.insights = journalInsights(journal, out);
   return model;
